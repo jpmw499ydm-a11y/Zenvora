@@ -464,7 +464,7 @@ export default function App() {
           />
           <span
             className={
-              connectionStatus === "connected" ? "active" : ""
+              connectionStatus === "checking" ? "active" : ""
             }
           />
         </div>
