@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
 type Page = "home" | "subscription" | "wallet" | "profile";
@@ -25,6 +25,12 @@ type Transaction = {
   status: TransactionStatus;
 };
 
+type ConnectionStatus =
+  | "not-installed"
+  | "config-opened"
+  | "checking"
+  | "connected";
+
 const plans: Plan[] = [
   {
     id: "1",
@@ -50,7 +56,7 @@ const plans: Plan[] = [
 ];
 
 function formatMoney(value: number) {
-  return `${value.toLocaleString("ru-RU")} ₽`;
+  return `${Math.abs(value).toLocaleString("ru-RU")} ₽`;
 }
 
 function getCurrentDateTime() {
@@ -77,16 +83,48 @@ function formatDate(date: Date) {
   }).format(date);
 }
 
+function getDaysLeft(date: Date | null) {
+  if (!date) {
+    return 0;
+  }
+
+  const difference = date.getTime() - Date.now();
+
+  return Math.max(
+    0,
+    Math.ceil(difference / (1000 * 60 * 60 * 24)),
+  );
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>("home");
   const [selectedPlan, setSelectedPlan] = useState<PlanId>("3");
 
-  const [balance, setBalance] = useState(0);
-  const [subscriptionEnd, setSubscriptionEnd] = useState<Date | null>(null);
-  const [activePlanTitle, setActivePlanTitle] = useState<string | null>(null);
+  /*
+    Пока это тестовый баланс интерфейса.
 
-  const [showPaymentMethods, setShowPaymentMethods] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
+    Чтобы проверить оформление подписки без настоящей платёжной
+    системы, можешь временно изменить 0 на 2500.
+
+    После подключения базы данных баланс будет загружаться с сервера.
+  */
+  const [balance, setBalance] = useState(0);
+
+  const [subscriptionEnd, setSubscriptionEnd] =
+    useState<Date | null>(null);
+
+  const [activePlanTitle, setActivePlanTitle] =
+    useState<string | null>(null);
+
+  const [connectionStatus, setConnectionStatus] =
+    useState<ConnectionStatus>("not-installed");
+
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showSubscriptionSuccess, setShowSubscriptionSuccess] =
+    useState(false);
+
+  const [showInsufficientBalance, setShowInsufficientBalance] =
+    useState(false);
 
   const [transactions, setTransactions] = useState<Transaction[]>([
     {
@@ -94,71 +132,81 @@ export default function App() {
       type: "deposit",
       title: "Пополнение баланса",
       amount: 500,
-      date: "Ожидает подтверждения",
+      date: "23.07.2026, 21:40",
       status: "pending",
     },
   ]);
 
   const currentPlan = useMemo(() => {
-    return plans.find((plan) => plan.id === selectedPlan) ?? plans[1];
+    return (
+      plans.find((plan) => plan.id === selectedPlan) ?? plans[1]
+    );
   }, [selectedPlan]);
 
   const subscriptionActive =
-    subscriptionEnd !== null && subscriptionEnd.getTime() > Date.now();
+    subscriptionEnd !== null &&
+    subscriptionEnd.getTime() > Date.now();
 
-  function openPage(nextPage: Page) {
-    setPage(nextPage);
+  const pendingPayments = transactions.filter(
+    (transaction) =>
+      transaction.type === "deposit" &&
+      transaction.status === "pending",
+  );
+
+  const daysLeft = getDaysLeft(subscriptionEnd);
+
+  useEffect(() => {
     window.scrollTo({
       top: 0,
       behavior: "smooth",
     });
-  }
+  }, [page]);
 
-  function openSubscription() {
-    openPage("subscription");
-  }
-
-  function openWallet() {
-    openPage("wallet");
+  function openPage(nextPage: Page) {
+    setPage(nextPage);
   }
 
   function buySubscription() {
     if (balance < currentPlan.price) {
-      openWallet();
+      setShowInsufficientBalance(true);
       return;
     }
 
     const months = Number(currentPlan.id);
+
     const startingDate =
-      subscriptionEnd && subscriptionEnd.getTime() > Date.now()
+      subscriptionEnd &&
+      subscriptionEnd.getTime() > Date.now()
         ? subscriptionEnd
         : new Date();
 
     const newEndDate = addMonths(startingDate, months);
 
-    setBalance((value) => value - currentPlan.price);
+    setBalance((currentBalance) => {
+      return currentBalance - currentPlan.price;
+    });
+
     setSubscriptionEnd(newEndDate);
     setActivePlanTitle(currentPlan.title);
+    setConnectionStatus("not-installed");
 
-    setTransactions((current) => [
+    setTransactions((currentTransactions) => [
       {
         id: Date.now(),
         type: "subscription",
-        title: `Подписка на ${currentPlan.title}`,
+        title: `Оплата подписки на ${currentPlan.title}`,
         amount: -currentPlan.price,
         date: getCurrentDateTime(),
         status: "confirmed",
       },
-      ...current,
+      ...currentTransactions,
     ]);
 
-    setShowSuccess(true);
+    setShowSubscriptionSuccess(true);
   }
 
   function createDeposit(amount: number) {
-    setShowPaymentMethods(false);
-
-    setTransactions((current) => [
+    setTransactions((currentTransactions) => [
       {
         id: Date.now(),
         type: "deposit",
@@ -167,32 +215,67 @@ export default function App() {
         date: getCurrentDateTime(),
         status: "pending",
       },
-      ...current,
+      ...currentTransactions,
     ]);
+
+    setShowPaymentModal(false);
   }
 
-  function confirmTestPayment(transactionId: number) {
-    const transaction = transactions.find(
-      (item) => item.id === transactionId,
-    );
+  function openExternalLink(url: string) {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 
-    if (!transaction || transaction.status !== "pending") {
-      return;
-    }
+  function openAppDownload() {
+    /*
+      Позже сюда вставим настоящую ссылку на приложение.
 
-    setBalance((value) => value + transaction.amount);
+      Для iPhone это может быть App Store.
+      Для Android — Google Play или APK.
+    */
 
-    setTransactions((current) =>
-      current.map((item) =>
-        item.id === transactionId
-          ? {
-              ...item,
-              status: "confirmed",
-              date: getCurrentDateTime(),
-            }
-          : item,
-      ),
-    );
+    openExternalLink("https://example.com/download");
+  }
+
+  function openInstallationGuide() {
+    /*
+      Позже заменим ссылку на настоящую инструкцию Zenvora.
+    */
+
+    openExternalLink("https://example.com/instruction");
+  }
+
+  function installVpnConfiguration() {
+    /*
+      Позже сервер будет выдавать каждому пользователю
+      его персональную ссылку на VPN-конфигурацию.
+
+      Например:
+      vless://...
+      wireguard://...
+      https://zenvora.ru/config/USER_TOKEN
+    */
+
+    setConnectionStatus("config-opened");
+
+    openExternalLink("https://example.com/vpn-config");
+  }
+
+  function checkVpnConnection() {
+    setConnectionStatus("checking");
+
+    /*
+      Это временная демонстрация интерфейса.
+
+      Позже здесь будет запрос на сервер:
+      GET /api/vpn/check
+
+      Сервер проверит, подключался ли пользователь
+      через выданную ему конфигурацию.
+    */
+
+    window.setTimeout(() => {
+      setConnectionStatus("connected");
+    }, 1800);
   }
 
   function getTransactionStatus(status: TransactionStatus) {
@@ -201,10 +284,353 @@ export default function App() {
     }
 
     if (status === "pending") {
-      return "Ожидает подтверждения";
+      return "Проверяем платёж";
     }
 
     return "Отклонено";
+  }
+
+  function renderHomeContent() {
+    if (!subscriptionActive) {
+      return (
+        <>
+          <section className="hero">
+            <span className="heroBadge">
+              <span className="heroBadgeDot" />
+              Стабильное подключение
+            </span>
+
+            <h1>
+              Надёжный и
+              <br />
+              быстрый <span>VPN</span>
+            </h1>
+
+            <p>
+              Безопасный доступ к интернету, высокая скорость и
+              автоматический обход блокировок.
+            </p>
+
+            <button
+              className="primaryButton heroButton"
+              type="button"
+              onClick={() => openPage("subscription")}
+            >
+              Оформить подписку
+              <span>›</span>
+            </button>
+          </section>
+
+          <div className="advantages">
+            <article className="advantageCard">
+              <span className="advantageIcon">⚡</span>
+
+              <div>
+                <strong>Высокая скорость</strong>
+                <p>Быстрое и стабильное соединение</p>
+              </div>
+            </article>
+
+            <article className="advantageCard">
+              <span className="advantageIcon">🔒</span>
+
+              <div>
+                <strong>Защита данных</strong>
+                <p>Безопасность в любой сети</p>
+              </div>
+            </article>
+
+            <article className="advantageCard">
+              <span className="advantageIcon">🇪🇺</span>
+
+              <div>
+                <strong>Обход блокировок</strong>
+                <p>Автоматический режим подключения</p>
+              </div>
+            </article>
+          </div>
+
+          {pendingPayments.length > 0 && (
+            <div className="pendingPaymentBanner">
+              <span className="pendingPaymentIcon">◷</span>
+
+              <div>
+                <strong>Проверяем платёж</strong>
+                <p>
+                  Баланс обновится автоматически после подтверждения
+                  оплаты.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => openPage("wallet")}
+              >
+                ›
+              </button>
+            </div>
+          )}
+
+          <div className="homeWalletCard">
+            <div>
+              <span>Ваш баланс</span>
+              <strong>{formatMoney(balance)}</strong>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setShowPaymentModal(true)}
+            >
+              Пополнить
+            </button>
+          </div>
+        </>
+      );
+    }
+
+    if (connectionStatus === "connected") {
+      return (
+        <section className="connectedHome">
+          <div className="connectedIcon">✓</div>
+
+          <span className="connectedBadge">
+            VPN ПОДКЛЮЧЁН
+          </span>
+
+          <h1>Всё готово!</h1>
+
+          <p>
+            Zenvora успешно настроена и готова к работе. Желаем
+            приятного и безопасного пользования!
+          </p>
+
+          <div className="connectionInformationCard">
+            <div>
+              <span>Статус</span>
+              <strong className="connectedText">
+                Подключение защищено
+              </strong>
+            </div>
+
+            <div>
+              <span>Режим</span>
+              <strong>Автоматический</strong>
+            </div>
+
+            <div>
+              <span>Подписка до</span>
+              <strong>
+                {subscriptionEnd
+                  ? formatDate(subscriptionEnd)
+                  : "—"}
+              </strong>
+            </div>
+          </div>
+
+          <button
+            className="secondaryButton"
+            type="button"
+            onClick={() => openPage("profile")}
+          >
+            Открыть профиль
+          </button>
+        </section>
+      );
+    }
+
+    return (
+      <section className="setupHome">
+        <div className="setupHeading">
+          <span className="setupBadge">
+            ПОДПИСКА АКТИВНА
+          </span>
+
+          <h1>Настройте VPN</h1>
+
+          <p>
+            Выполните три простых шага, чтобы начать пользоваться
+            Zenvora.
+          </p>
+        </div>
+
+        <div className="setupProgress">
+          <span className="active" />
+          <span
+            className={
+              connectionStatus !== "not-installed"
+                ? "active"
+                : ""
+            }
+          />
+          <span
+            className={
+              connectionStatus === "connected" ? "active" : ""
+            }
+          />
+        </div>
+
+        <div className="setupSteps">
+          <article className="setupStep">
+            <span className="stepNumber">1</span>
+
+            <div className="setupStepContent">
+              <span className="stepLabel">ПЕРВЫЙ ШАГ</span>
+              <h3>Установите приложение</h3>
+
+              <p>
+                Скачайте приложение, через которое будет работать
+                VPN.
+              </p>
+
+              <div className="downloadButtons">
+                <button
+                  type="button"
+                  onClick={openAppDownload}
+                >
+                  <span></span>
+
+                  <div>
+                    <small>Скачать для</small>
+                    <strong>iPhone</strong>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={openAppDownload}
+                >
+                  <span>◉</span>
+
+                  <div>
+                    <small>Скачать для</small>
+                    <strong>Android</strong>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </article>
+
+          <article className="setupStep">
+            <span className="stepNumber">2</span>
+
+            <div className="setupStepContent">
+              <span className="stepLabel">ВТОРОЙ ШАГ</span>
+              <h3>Откройте инструкцию</h3>
+
+              <p>
+                Посмотрите короткую инструкцию по установке и
+                настройке приложения.
+              </p>
+
+              <button
+                className="instructionButton"
+                type="button"
+                onClick={openInstallationGuide}
+              >
+                <span>?</span>
+
+                <div>
+                  <strong>Инструкция по установке</strong>
+                  <small>Пошаговое руководство</small>
+                </div>
+
+                <b>›</b>
+              </button>
+            </div>
+          </article>
+
+          <article
+            className={`setupStep ${
+              connectionStatus !== "not-installed"
+                ? "completedStep"
+                : ""
+            }`}
+          >
+            <span className="stepNumber">
+              {connectionStatus !== "not-installed"
+                ? "✓"
+                : "3"}
+            </span>
+
+            <div className="setupStepContent">
+              <span className="stepLabel">ПОСЛЕДНИЙ ШАГ</span>
+              <h3>Установите VPN</h3>
+
+              <p>
+                Нажмите кнопку ниже и разрешите открытие
+                персональной конфигурации Zenvora.
+              </p>
+
+              {connectionStatus === "not-installed" && (
+                <button
+                  className="primaryButton"
+                  type="button"
+                  onClick={installVpnConfiguration}
+                >
+                  Установить VPN
+                  <span>›</span>
+                </button>
+              )}
+
+              {connectionStatus === "config-opened" && (
+                <div className="connectionCheckBlock">
+                  <div className="configurationOpened">
+                    <span>✓</span>
+
+                    <div>
+                      <strong>Конфигурация открыта</strong>
+                      <p>
+                        Установите её в приложении и вернитесь сюда.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    className="primaryButton"
+                    type="button"
+                    onClick={checkVpnConnection}
+                  >
+                    Проверить подключение
+                    <span>›</span>
+                  </button>
+
+                  <button
+                    className="repeatConfigButton"
+                    type="button"
+                    onClick={installVpnConfiguration}
+                  >
+                    Открыть конфигурацию ещё раз
+                  </button>
+                </div>
+              )}
+
+              {connectionStatus === "checking" && (
+                <div className="checkingConnection">
+                  <span className="loadingCircle" />
+
+                  <div>
+                    <strong>Проверяем подключение</strong>
+                    <p>Это займёт несколько секунд</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </article>
+        </div>
+
+        <div className="subscriptionMiniCard">
+          <div>
+            <span>Активный тариф</span>
+            <strong>{activePlanTitle}</strong>
+          </div>
+
+          <div>
+            <span>Осталось</span>
+            <strong>{daysLeft} дней</strong>
+          </div>
+        </div>
+      </section>
+    );
   }
 
   return (
@@ -240,72 +666,7 @@ export default function App() {
         <div className="pageContent">
           {page === "home" && (
             <section className="homePage">
-              <div className="hero">
-                <span className="heroBadge">
-                  <span className="heroBadgeDot" />
-                  Стабильное подключение
-                </span>
-
-                <h1>
-                  Надёжный и
-                  <br />
-                  быстрый <span>VPN</span>
-                </h1>
-
-                <p>
-                  Безопасный доступ к интернету, высокая скорость и обход
-                  блокировок в одном приложении.
-                </p>
-
-                <button
-                  className="primaryButton heroButton"
-                  type="button"
-                  onClick={openSubscription}
-                >
-                  Оформить подписку
-                  <span>›</span>
-                </button>
-              </div>
-
-              <div className="advantages">
-                <article className="advantageCard">
-                  <span className="advantageIcon">⚡</span>
-
-                  <div>
-                    <strong>Высокая скорость</strong>
-                    <p>Быстрое и стабильное соединение</p>
-                  </div>
-                </article>
-
-                <article className="advantageCard">
-                  <span className="advantageIcon">🔒</span>
-
-                  <div>
-                    <strong>Защита данных</strong>
-                    <p>Безопасность в любой сети</p>
-                  </div>
-                </article>
-
-                <article className="advantageCard">
-                  <span className="advantageIcon">🇪🇺</span>
-
-                  <div>
-                    <strong>Обход блокировок</strong>
-                    <p>Автоматический режим подключения</p>
-                  </div>
-                </article>
-              </div>
-
-              <div className="homeWalletCard">
-                <div>
-                  <span>Ваш баланс</span>
-                  <strong>{formatMoney(balance)}</strong>
-                </div>
-
-                <button type="button" onClick={openWallet}>
-                  Пополнить
-                </button>
-              </div>
+              {renderHomeContent()}
             </section>
           )}
 
@@ -360,10 +721,14 @@ export default function App() {
 
                       <span className="planPrice">
                         {plan.oldPrice && (
-                          <small>{formatMoney(plan.oldPrice)}</small>
+                          <small>
+                            {formatMoney(plan.oldPrice)}
+                          </small>
                         )}
 
-                        <strong>{formatMoney(plan.price)}</strong>
+                        <strong>
+                          {formatMoney(plan.price)}
+                        </strong>
                       </span>
                     </button>
                   );
@@ -378,7 +743,9 @@ export default function App() {
 
                 <div>
                   <span>К оплате</span>
-                  <strong>{formatMoney(currentPlan.price)}</strong>
+                  <strong>
+                    {formatMoney(currentPlan.price)}
+                  </strong>
                 </div>
               </div>
 
@@ -390,8 +757,8 @@ export default function App() {
 
                 {balance < currentPlan.price && (
                   <small>
-                    Недостаточно средств. После нажатия вы перейдёте в
-                    кошелёк.
+                    На балансе недостаточно средств. Сначала
+                    пополните кошелёк.
                   </small>
                 )}
               </div>
@@ -401,10 +768,7 @@ export default function App() {
                 type="button"
                 onClick={buySubscription}
               >
-                {balance >= currentPlan.price
-                  ? `Оформить за ${formatMoney(currentPlan.price)}`
-                  : "Перейти к пополнению"}
-
+                Оформить за {formatMoney(currentPlan.price)}
                 <span>›</span>
               </button>
             </section>
@@ -434,27 +798,38 @@ export default function App() {
 
                 <button
                   type="button"
-                  onClick={() => setShowPaymentMethods(true)}
+                  onClick={() => setShowPaymentModal(true)}
                 >
                   <span>＋</span>
                   Пополнить баланс
                 </button>
               </div>
 
+              {pendingPayments.length > 0 && (
+                <div className="paymentCheckingCard">
+                  <span className="loadingCircle" />
+
+                  <div>
+                    <strong>Платёж проверяется</strong>
+                    <p>
+                      Баланс изменится автоматически после
+                      подтверждения платёжной системой.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="transactionsHeader">
                 <div>
                   <span>История операций</span>
-                  <small>{transactions.length} операций</small>
+
+                  <small>
+                    {transactions.length} операций
+                  </small>
                 </div>
               </div>
 
               <div className="transactions">
-                {transactions.length === 0 && (
-                  <div className="emptyTransactions">
-                    Здесь появится история ваших операций
-                  </div>
-                )}
-
                 {transactions.map((transaction) => (
                   <article
                     className="transactionCard"
@@ -463,15 +838,21 @@ export default function App() {
                     <span
                       className={`transactionIcon ${transaction.type}`}
                     >
-                      {transaction.type === "deposit" ? "↓" : "◇"}
+                      {transaction.type === "deposit"
+                        ? "↓"
+                        : "◇"}
                     </span>
 
                     <div className="transactionInfo">
                       <strong>{transaction.title}</strong>
                       <span>{transaction.date}</span>
 
-                      <small className={`status ${transaction.status}`}>
-                        {getTransactionStatus(transaction.status)}
+                      <small
+                        className={`status ${transaction.status}`}
+                      >
+                        {getTransactionStatus(
+                          transaction.status,
+                        )}
                       </small>
                     </div>
 
@@ -483,30 +864,18 @@ export default function App() {
                             : "negativeAmount"
                         }
                       >
-                        {transaction.amount > 0 ? "+" : ""}
+                        {transaction.amount > 0 ? "+" : "−"}
                         {formatMoney(transaction.amount)}
                       </strong>
-
-                      {transaction.status === "pending" &&
-                        transaction.type === "deposit" && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              confirmTestPayment(transaction.id)
-                            }
-                          >
-                            Подтвердить
-                          </button>
-                        )}
                     </div>
                   </article>
                 ))}
               </div>
 
               <p className="testPaymentNotice">
-                Кнопка «Подтвердить» временная и нужна для проверки
-                интерфейса. Позже подтверждение будет приходить
-                автоматически от платёжной системы.
+                Подтверждение платежей будет выполняться
+                автоматически. Пользователь не сможет самостоятельно
+                менять статус операции.
               </p>
             </section>
           )}
@@ -534,7 +903,10 @@ export default function App() {
 
                 <div className="profileInformation">
                   <h3>Даниил</h3>
-                  <p>Telegram ID загрузится автоматически</p>
+
+                  <p>
+                    Telegram ID загрузится автоматически
+                  </p>
                 </div>
 
                 <span
@@ -542,7 +914,9 @@ export default function App() {
                     subscriptionActive ? "active" : ""
                   }`}
                 >
-                  {subscriptionActive ? "PREMIUM" : "БЕЗ ПОДПИСКИ"}
+                  {subscriptionActive
+                    ? "PREMIUM"
+                    : "БЕЗ ПОДПИСКИ"}
                 </span>
               </div>
 
@@ -554,10 +928,7 @@ export default function App() {
 
                 <button
                   type="button"
-                  onClick={() => {
-                    openWallet();
-                    setShowPaymentMethods(true);
-                  }}
+                  onClick={() => setShowPaymentModal(true)}
                 >
                   Пополнить
                 </button>
@@ -569,6 +940,7 @@ export default function App() {
 
                   <div>
                     <span>Статус подписки</span>
+
                     <strong>
                       {subscriptionActive
                         ? "Подписка активна"
@@ -586,41 +958,97 @@ export default function App() {
 
                     <div>
                       <span>Действует до</span>
-                      <strong>{formatDate(subscriptionEnd)}</strong>
+
+                      <strong>
+                        {formatDate(subscriptionEnd)}
+                      </strong>
+                    </div>
+
+                    <div>
+                      <span>Осталось</span>
+                      <strong>{daysLeft} дней</strong>
+                    </div>
+
+                    <div>
+                      <span>VPN</span>
+
+                      <strong
+                        className={
+                          connectionStatus === "connected"
+                            ? "connectedText"
+                            : ""
+                        }
+                      >
+                        {connectionStatus === "connected"
+                          ? "Подключён"
+                          : "Не настроен"}
+                      </strong>
                     </div>
                   </div>
                 ) : (
                   <button
                     className="secondaryButton"
                     type="button"
-                    onClick={openSubscription}
+                    onClick={() =>
+                      openPage("subscription")
+                    }
                   >
                     Оформить подписку
                   </button>
                 )}
               </div>
 
+              {subscriptionActive &&
+                connectionStatus !== "connected" && (
+                  <button
+                    className="profileMenuItem"
+                    type="button"
+                    onClick={() => openPage("home")}
+                  >
+                    <span className="menuIcon">⚙</span>
+
+                    <span>
+                      <strong>Настроить VPN</strong>
+
+                      <small>
+                        Установка приложения и конфигурации
+                      </small>
+                    </span>
+
+                    <b>›</b>
+                  </button>
+                )}
+
               <button
                 className="profileMenuItem"
                 type="button"
-                onClick={openWallet}
+                onClick={() => openPage("wallet")}
               >
                 <span className="menuIcon">₽</span>
 
                 <span>
                   <strong>Кошелёк и платежи</strong>
-                  <small>Баланс и история операций</small>
+
+                  <small>
+                    Баланс и история операций
+                  </small>
                 </span>
 
                 <b>›</b>
               </button>
 
-              <button className="profileMenuItem" type="button">
+              <button
+                className="profileMenuItem"
+                type="button"
+              >
                 <span className="menuIcon">?</span>
 
                 <span>
                   <strong>Поддержка</strong>
-                  <small>Помощь и ответы на вопросы</small>
+
+                  <small>
+                    Помощь и ответы на вопросы
+                  </small>
                 </span>
 
                 <b>›</b>
@@ -650,7 +1078,9 @@ export default function App() {
 
           <button
             type="button"
-            className={page === "subscription" ? "active" : ""}
+            className={
+              page === "subscription" ? "active" : ""
+            }
             onClick={() => openPage("subscription")}
           >
             <span>◇</span>
@@ -677,10 +1107,10 @@ export default function App() {
         </nav>
       </main>
 
-      {showPaymentMethods && (
+      {showPaymentModal && (
         <div
           className="modalOverlay"
-          onClick={() => setShowPaymentMethods(false)}
+          onClick={() => setShowPaymentModal(false)}
         >
           <div
             className="paymentModal"
@@ -696,14 +1126,15 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={() => setShowPaymentMethods(false)}
+                onClick={() => setShowPaymentModal(false)}
               >
                 ×
               </button>
             </div>
 
             <p>
-              Способы оплаты добавим после того, как ты их пришлёшь.
+              После оплаты платёж появится в истории со статусом
+              «Проверяем платёж».
             </p>
 
             <div className="depositAmounts">
@@ -721,10 +1152,12 @@ export default function App() {
         </div>
       )}
 
-      {showSuccess && (
+      {showSubscriptionSuccess && (
         <div
           className="modalOverlay"
-          onClick={() => setShowSuccess(false)}
+          onClick={() =>
+            setShowSubscriptionSuccess(false)
+          }
         >
           <div
             className="successModal"
@@ -736,17 +1169,54 @@ export default function App() {
 
             <p>
               Тариф «{currentPlan.title}» успешно активирован.
+              Теперь настройте VPN.
             </p>
 
             <button
               className="primaryButton"
               type="button"
               onClick={() => {
-                setShowSuccess(false);
-                openPage("profile");
+                setShowSubscriptionSuccess(false);
+                openPage("home");
               }}
             >
-              Перейти в профиль
+              Перейти к установке
+              <span>›</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {showInsufficientBalance && (
+        <div
+          className="modalOverlay"
+          onClick={() =>
+            setShowInsufficientBalance(false)
+          }
+        >
+          <div
+            className="successModal warningModal"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <span className="warningIcon">!</span>
+
+            <h3>Недостаточно средств</h3>
+
+            <p>
+              Пополните баланс, чтобы оформить выбранную
+              подписку.
+            </p>
+
+            <button
+              className="primaryButton"
+              type="button"
+              onClick={() => {
+                setShowInsufficientBalance(false);
+                openPage("wallet");
+                setShowPaymentModal(true);
+              }}
+            >
+              Пополнить баланс
               <span>›</span>
             </button>
           </div>
