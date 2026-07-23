@@ -1,1260 +1,604 @@
-:root {
-  font-family:
-    Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #ffffff;
-  background: #05070d;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-}
+/* =========================================
+   СТАТУС ПРОВЕРКИ ПЛАТЕЖА
+   ========================================= */
 
-* {
-  box-sizing: border-box;
-}
-
-html,
-body,
-#root {
-  width: 100%;
-  min-height: 100%;
-  margin: 0;
-}
-
-body {
-  min-width: 320px;
-  overflow-x: hidden;
-  background: #05070d;
-}
-
-button,
-input {
-  font: inherit;
-}
-
-button {
-  color: inherit;
-  border: 0;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.app {
-  position: relative;
-  min-height: 100vh;
-  overflow: hidden;
-  background:
-    radial-gradient(
-      circle at 15% 10%,
-      rgba(32, 102, 255, 0.18),
-      transparent 32%
-    ),
-    radial-gradient(
-      circle at 90% 70%,
-      rgba(90, 54, 255, 0.15),
-      transparent 34%
-    ),
-    linear-gradient(180deg, #080b13 0%, #04060b 100%);
-}
-
-.backgroundGlow {
-  position: fixed;
-  border-radius: 50%;
-  filter: blur(110px);
-  pointer-events: none;
-  opacity: 0.42;
-}
-
-.backgroundGlowOne {
-  top: -130px;
-  left: -130px;
-  width: 330px;
-  height: 330px;
-  background: #006cff;
-}
-
-.backgroundGlowTwo {
-  right: -150px;
-  bottom: 80px;
-  width: 340px;
-  height: 340px;
-  background: #4934ff;
-}
-
-.phone {
-  position: relative;
-  z-index: 1;
-  width: 100%;
-  max-width: 520px;
-  min-height: 100vh;
-  margin: 0 auto;
-  padding:
-    calc(22px + env(safe-area-inset-top))
-    18px
-    calc(118px + env(safe-area-inset-bottom));
-}
-
-.header {
+.pendingPaymentBanner,
+.paymentCheckingCard {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 30px;
-}
-
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  padding: 0;
-  background: transparent;
-  text-align: left;
-}
-
-.brandLogo {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid rgba(104, 151, 255, 0.45);
-  border-radius: 15px;
-  background:
-    linear-gradient(
-      145deg,
-      rgba(43, 111, 255, 0.95),
-      rgba(91, 55, 255, 0.82)
-    );
-  box-shadow:
-    0 10px 28px rgba(37, 100, 255, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-  font-size: 22px;
-  font-weight: 900;
-}
-
-.brandText {
-  display: flex;
-  flex-direction: column;
-}
-
-.brandText small {
-  margin-bottom: 3px;
-  color: #6789c5;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.2em;
-}
-
-.brandText strong {
-  font-size: 22px;
-  font-weight: 900;
-  letter-spacing: -0.05em;
-}
-
-.avatar,
-.largeAvatar {
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  background:
-    linear-gradient(
-      145deg,
-      rgba(42, 110, 255, 0.95),
-      rgba(93, 56, 255, 0.82)
-    );
-  box-shadow:
-    0 10px 30px rgba(37, 100, 255, 0.25),
-    inset 0 1px 0 rgba(255, 255, 255, 0.35);
-}
-
-.avatar {
-  width: 44px;
-  height: 44px;
-  border-radius: 15px;
-  font-weight: 800;
-}
-
-.pageContent {
-  width: 100%;
-}
-
-.homePage,
-.page {
-  animation: fadeUp 0.3s ease;
-}
-
-.hero {
-  padding: 28px 0 16px;
-}
-
-.heroBadge {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 22px;
-  padding: 9px 13px;
-  border: 1px solid rgba(91, 137, 255, 0.2);
-  border-radius: 999px;
-  color: #8eabe0;
-  background: rgba(42, 77, 145, 0.1);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.heroBadgeDot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #40e993;
-  box-shadow: 0 0 14px rgba(64, 233, 147, 0.8);
-}
-
-.hero h1 {
-  margin: 0 0 18px;
-  font-size: clamp(42px, 11vw, 58px);
-  line-height: 0.98;
-  letter-spacing: -0.065em;
-}
-
-.hero h1 span {
-  color: #5a8fff;
-  text-shadow: 0 0 30px rgba(67, 118, 255, 0.35);
-}
-
-.hero p {
-  max-width: 430px;
-  margin: 0 0 28px;
-  color: #77859b;
-  font-size: 15px;
-  line-height: 1.65;
-}
-
-.primaryButton {
-  display: flex;
-  width: 100%;
-  min-height: 56px;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  border-radius: 18px;
+  gap: 13px;
+  margin-top: 17px;
+  padding: 16px;
+  border: 1px solid rgba(238, 169, 82, 0.2);
+  border-radius: 19px;
   background:
     linear-gradient(
       135deg,
-      #3675ff 0%,
-      #4a5dff 55%,
-      #623cff 100%
-    );
-  box-shadow:
-    0 18px 40px rgba(49, 91, 255, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.28);
-  font-size: 15px;
-  font-weight: 800;
-  transition:
-    transform 0.2s ease,
-    filter 0.2s ease;
-}
-
-.primaryButton:active {
-  transform: scale(0.98);
-}
-
-.primaryButton span {
-  font-size: 23px;
-  line-height: 1;
-}
-
-.heroButton {
-  max-width: 330px;
-}
-
-.advantages {
-  display: grid;
-  gap: 12px;
-  margin-top: 30px;
-}
-
-.advantageCard {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-  padding: 17px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 20px;
-  background:
-    linear-gradient(
-      145deg,
-      rgba(255, 255, 255, 0.055),
-      rgba(255, 255, 255, 0.022)
-    );
-  box-shadow:
-    0 16px 38px rgba(0, 0, 0, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
-
-.advantageIcon {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  flex: 0 0 auto;
-  border-radius: 15px;
-  background: rgba(73, 115, 220, 0.12);
-  font-size: 23px;
-}
-
-.advantageCard strong {
-  display: block;
-  margin-bottom: 4px;
-  font-size: 14px;
-}
-
-.advantageCard p {
-  margin: 0;
-  color: #69768b;
-  font-size: 12px;
-}
-
-.homeWalletCard {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 15px;
-  margin-top: 20px;
-  padding: 18px;
-  border: 1px solid rgba(94, 139, 255, 0.19);
-  border-radius: 22px;
-  background:
-    linear-gradient(
-      135deg,
-      rgba(45, 91, 190, 0.17),
-      rgba(43, 47, 92, 0.08)
+      rgba(204, 131, 39, 0.11),
+      rgba(84, 57, 32, 0.05)
     );
 }
 
-.homeWalletCard div {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.homeWalletCard span {
-  color: #70809a;
-  font-size: 11px;
-}
-
-.homeWalletCard strong {
-  font-size: 22px;
-}
-
-.homeWalletCard button,
-.profileBalance button {
-  padding: 11px 15px;
-  border: 1px solid rgba(106, 151, 255, 0.35);
-  border-radius: 13px;
-  color: #8bb0ff;
-  background: rgba(50, 98, 205, 0.12);
-  font-size: 12px;
-  font-weight: 800;
-}
-
-.pageHeader {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 25px;
-}
-
-.pageHeader div {
-  display: flex;
-  flex-direction: column;
-}
-
-.pageHeader span {
-  margin-bottom: 3px;
-  color: #5f82c2;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.2em;
-}
-
-.pageHeader h2 {
-  margin: 0;
-  font-size: 27px;
-  letter-spacing: -0.04em;
-}
-
-.backButton {
+.pendingPaymentIcon {
   display: grid;
   place-items: center;
   width: 43px;
   height: 43px;
   flex: 0 0 auto;
-  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.045);
-  font-size: 31px;
+  color: #e8a855;
+  background: rgba(231, 158, 69, 0.11);
+  font-size: 22px;
 }
 
-.plans {
-  display: grid;
-  gap: 12px;
-}
-
-.planCard {
-  position: relative;
-  display: grid;
-  width: 100%;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 13px;
-  align-items: center;
-  padding: 17px;
-  border: 1px solid rgba(255, 255, 255, 0.085);
-  border-radius: 21px;
-  background:
-    linear-gradient(
-      145deg,
-      rgba(255, 255, 255, 0.055),
-      rgba(255, 255, 255, 0.02)
-    );
-  text-align: left;
-  transition:
-    border-color 0.2s ease,
-    background 0.2s ease,
-    transform 0.2s ease;
-}
-
-.planCard:active {
-  transform: scale(0.985);
-}
-
-.planCard.selectedPlan {
-  border-color: rgba(71, 125, 255, 0.85);
-  background:
-    linear-gradient(
-      135deg,
-      rgba(52, 102, 235, 0.24),
-      rgba(74, 65, 180, 0.12)
-    );
-  box-shadow:
-    0 15px 36px rgba(43, 91, 255, 0.16),
-    inset 0 0 0 1px rgba(89, 139, 255, 0.08);
-}
-
-.planCheck {
-  display: grid;
-  place-items: center;
-  width: 27px;
-  height: 27px;
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 50%;
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.035);
-  font-size: 13px;
-  font-weight: 900;
-}
-
-.selectedPlan .planCheck {
-  border-color: #4f87ff;
-  background: #3971ed;
-  box-shadow: 0 0 17px rgba(56, 113, 237, 0.45);
-}
-
-.planInformation {
-  display: flex;
+.pendingPaymentBanner > div,
+.paymentCheckingCard > div {
   min-width: 0;
-  flex-direction: column;
-  gap: 6px;
+  flex: 1;
 }
 
-.planHeading {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-}
-
-.planHeading strong {
-  font-size: 15px;
-}
-
-.planInformation > small {
-  color: #66758c;
-  font-size: 10px;
-  line-height: 1.4;
-}
-
-.recommendedBadge {
-  display: inline-flex;
-  padding: 5px 8px;
-  border: 1px solid rgba(74, 134, 255, 0.5);
-  border-radius: 999px;
-  color: #6fa3ff;
-  background: rgba(52, 106, 225, 0.08);
-  font-size: 8px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-}
-
-.planPrice {
-  display: flex;
-  align-items: flex-end;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.planPrice small {
-  color: #596478;
-  font-size: 10px;
-  text-decoration: line-through;
-}
-
-.planPrice strong {
-  font-size: 15px;
-  white-space: nowrap;
-}
-
-.orderSummary,
-.balanceNotice {
-  margin-top: 17px;
-  padding: 17px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 19px;
-  background: rgba(255, 255, 255, 0.03);
-}
-
-.orderSummary {
-  display: grid;
-  gap: 13px;
-}
-
-.orderSummary div,
-.balanceNotice div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.orderSummary span,
-.balanceNotice span {
-  color: #6e7b91;
-  font-size: 11px;
-}
-
-.orderSummary strong,
-.balanceNotice strong {
-  font-size: 13px;
-}
-
-.balanceNotice {
-  margin-bottom: 17px;
-}
-
-.balanceNotice small {
+.pendingPaymentBanner strong,
+.paymentCheckingCard strong {
   display: block;
-  margin-top: 10px;
-  color: #d99b58;
-  font-size: 10px;
-  line-height: 1.5;
-}
-
-.walletBalanceCard {
-  padding: 25px;
-  border: 1px solid rgba(77, 127, 255, 0.38);
-  border-radius: 26px;
-  background:
-    radial-gradient(
-      circle at 85% 15%,
-      rgba(70, 105, 255, 0.31),
-      transparent 37%
-    ),
-    linear-gradient(
-      135deg,
-      rgba(31, 77, 184, 0.32),
-      rgba(42, 39, 102, 0.17)
-    );
-  box-shadow:
-    0 20px 55px rgba(22, 61, 151, 0.2),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-
-.walletBalanceCard > span {
-  color: #9baccc;
+  margin-bottom: 5px;
   font-size: 12px;
 }
 
-.walletBalanceCard > strong {
-  display: block;
-  margin: 9px 0 24px;
-  font-size: 40px;
-  letter-spacing: -0.05em;
+.pendingPaymentBanner p,
+.paymentCheckingCard p {
+  margin: 0;
+  color: #81715e;
+  font-size: 9px;
+  line-height: 1.5;
 }
 
-.walletBalanceCard button {
-  display: flex;
-  width: 100%;
-  min-height: 50px;
+.pendingPaymentBanner > button {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 11px;
+  color: #d89b51;
+  background: rgba(225, 153, 67, 0.08);
+  font-size: 23px;
+}
+
+.paymentCheckingCard {
+  margin-top: 14px;
+}
+
+/* =========================================
+   ЗАГРУЗКА И ПРОВЕРКА
+   ========================================= */
+
+.loadingCircle {
+  display: block;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  border: 3px solid rgba(233, 166, 80, 0.2);
+  border-top-color: #e8a855;
+  border-radius: 50%;
+  animation: loadingRotation 0.8s linear infinite;
+}
+
+@keyframes loadingRotation {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* =========================================
+   ЭКРАН НАСТРОЙКИ VPN
+   ========================================= */
+
+.setupHome {
+  animation: fadeUp 0.3s ease;
+}
+
+.setupHeading {
+  padding-top: 12px;
+  text-align: center;
+}
+
+.setupBadge,
+.connectedBadge {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
+  padding: 8px 12px;
+  border: 1px solid rgba(69, 226, 147, 0.25);
+  border-radius: 999px;
+  color: #50e69b;
+  background: rgba(57, 218, 140, 0.08);
+  font-size: 8px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.setupHeading h1 {
+  margin: 17px 0 10px;
+  font-size: 36px;
+  letter-spacing: -0.055em;
+}
+
+.setupHeading p {
+  max-width: 340px;
+  margin: 0 auto;
+  color: #718097;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.setupProgress {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+  margin: 24px 0 19px;
+}
+
+.setupProgress span {
+  height: 4px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.08);
-  font-size: 13px;
-  font-weight: 800;
+  transition: background 0.25s ease;
 }
 
-.walletBalanceCard button span {
-  font-size: 20px;
+.setupProgress span.active {
+  background:
+    linear-gradient(
+      90deg,
+      #3f7bff,
+      #6850ff
+    );
+  box-shadow: 0 0 14px rgba(66, 119, 255, 0.3);
 }
 
-.transactionsHeader {
-  margin: 28px 0 13px;
-}
-
-.transactionsHeader div {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.transactionsHeader span {
-  font-size: 15px;
-  font-weight: 800;
-}
-
-.transactionsHeader small {
-  color: #68758b;
-  font-size: 10px;
-}
-
-.transactions {
+.setupSteps {
   display: grid;
-  gap: 11px;
+  gap: 13px;
 }
 
-.transactionCard {
+.setupStep {
+  position: relative;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  padding: 15px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 19px;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 13px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 22px;
   background:
     linear-gradient(
       145deg,
-      rgba(255, 255, 255, 0.05),
+      rgba(255, 255, 255, 0.052),
+      rgba(255, 255, 255, 0.019)
+    );
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.17),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.completedStep {
+  border-color: rgba(70, 224, 149, 0.18);
+  background:
+    linear-gradient(
+      145deg,
+      rgba(49, 180, 117, 0.07),
       rgba(255, 255, 255, 0.018)
     );
 }
 
-.transactionIcon {
+.stepNumber {
   display: grid;
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
   place-items: center;
-  width: 42px;
-  height: 42px;
-  border-radius: 14px;
-  font-size: 19px;
+  border: 1px solid rgba(87, 136, 255, 0.34);
+  border-radius: 12px;
+  color: #81a9ff;
+  background: rgba(56, 106, 222, 0.1);
+  font-size: 12px;
   font-weight: 900;
 }
 
-.transactionIcon.deposit {
-  color: #4be79a;
-  background: rgba(53, 214, 137, 0.1);
+.completedStep .stepNumber {
+  border-color: rgba(64, 225, 148, 0.35);
+  color: #4be49a;
+  background: rgba(52, 213, 138, 0.1);
 }
 
-.transactionIcon.subscription {
-  color: #7ca4ff;
-  background: rgba(63, 110, 229, 0.12);
-}
-
-.transactionInfo {
-  display: flex;
+.setupStepContent {
   min-width: 0;
-  flex-direction: column;
-  gap: 4px;
 }
 
-.transactionInfo strong {
-  overflow: hidden;
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.stepLabel {
+  display: block;
+  margin-bottom: 5px;
+  color: #5e81c2;
+  font-size: 7px;
+  font-weight: 900;
+  letter-spacing: 0.17em;
 }
 
-.transactionInfo > span {
-  color: #647087;
-  font-size: 9px;
+.setupStepContent h3 {
+  margin: 0 0 7px;
+  font-size: 15px;
 }
 
-.transactionInfo .status {
-  display: inline-flex;
-  width: max-content;
-  margin: 0;
-  font-size: 8px;
-  font-weight: 800;
-}
-
-.status.confirmed {
-  color: #48dd92;
-}
-
-.status.pending {
-  color: #e6a85a;
-}
-
-.status.declined {
-  color: #e56f75;
-}
-
-.transactionAmount {
-  display: flex;
-  align-items: flex-end;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.transactionAmount strong {
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.positiveAmount {
-  color: #4be79a;
-}
-
-.negativeAmount {
-  color: #ffffff;
-}
-
-.transactionAmount button {
-  padding: 6px 9px;
-  border: 1px solid rgba(76, 132, 255, 0.4);
-  border-radius: 9px;
-  color: #82a9ff;
-  background: rgba(61, 109, 220, 0.1);
-  font-size: 8px;
-  font-weight: 800;
-}
-
-.emptyTransactions {
-  padding: 30px 20px;
-  border: 1px dashed rgba(255, 255, 255, 0.09);
-  border-radius: 19px;
-  color: #647087;
-  text-align: center;
-  font-size: 12px;
-}
-
-.testPaymentNotice {
-  margin: 15px 3px 0;
-  color: #59667c;
-  font-size: 9px;
+.setupStepContent > p {
+  margin: 0 0 15px;
+  color: #68768d;
+  font-size: 10px;
   line-height: 1.55;
 }
 
-.profileCard {
+/* =========================================
+   КНОПКИ СКАЧИВАНИЯ ПРИЛОЖЕНИЙ
+   ========================================= */
+
+.downloadButtons {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 13px;
-  align-items: center;
-  padding: 17px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 21px;
-  background:
-    linear-gradient(
-      145deg,
-      rgba(255, 255, 255, 0.055),
-      rgba(255, 255, 255, 0.022)
-    );
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
 }
 
-.largeAvatar {
-  width: 53px;
-  height: 53px;
-  border-radius: 17px;
-  font-size: 20px;
-  font-weight: 900;
-}
-
-.profileInformation {
+.downloadButtons button {
+  display: flex;
   min-width: 0;
+  min-height: 55px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid rgba(91, 139, 255, 0.2);
+  border-radius: 15px;
+  background: rgba(52, 96, 195, 0.075);
+  text-align: left;
+  transition:
+    transform 0.2s ease,
+    background 0.2s ease;
 }
 
-.profileInformation h3 {
-  margin: 0 0 5px;
-  font-size: 16px;
+.downloadButtons button:active {
+  transform: scale(0.97);
 }
 
-.profileInformation p {
+.downloadButtons button > span {
+  font-size: 21px;
+}
+
+.downloadButtons button div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.downloadButtons small {
+  color: #6f7d93;
+  font-size: 7px;
+}
+
+.downloadButtons strong {
   overflow: hidden;
-  margin: 0;
-  color: #66748a;
-  font-size: 9px;
+  font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.profileStatus {
-  padding: 7px 9px;
-  border-radius: 999px;
-  color: #7f8b9e;
-  background: rgba(255, 255, 255, 0.05);
-  font-size: 7px;
-  font-weight: 900;
-  white-space: nowrap;
-}
+/* =========================================
+   КНОПКА ИНСТРУКЦИИ
+   ========================================= */
 
-.profileStatus.active {
-  color: #51e99b;
-  background: rgba(56, 220, 143, 0.1);
-}
-
-.profileBalance {
-  display: flex;
+.instructionButton {
+  display: grid;
+  width: 100%;
+  min-height: 57px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
-  justify-content: space-between;
-  gap: 15px;
-  margin-top: 14px;
-  padding: 17px;
-  border: 1px solid rgba(94, 139, 255, 0.16);
-  border-radius: 20px;
-  background: rgba(44, 78, 150, 0.08);
+  padding: 11px;
+  border: 1px solid rgba(82, 135, 255, 0.2);
+  border-radius: 16px;
+  background: rgba(51, 98, 207, 0.07);
+  text-align: left;
 }
 
-.profileBalance div {
+.instructionButton > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 11px;
+  color: #82aaff;
+  background: rgba(67, 117, 230, 0.12);
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.instructionButton div {
   display: flex;
+  min-width: 0;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
-.profileBalance span {
-  color: #6c7890;
+.instructionButton strong {
   font-size: 10px;
 }
 
-.profileBalance strong {
+.instructionButton small {
+  color: #68768b;
+  font-size: 8px;
+}
+
+.instructionButton b {
+  color: #71819b;
   font-size: 21px;
 }
 
-.subscriptionStatusCard {
-  margin-top: 14px;
+/* =========================================
+   КОНФИГУРАЦИЯ ОТКРЫТА
+   ========================================= */
+
+.connectionCheckBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.configurationOpened {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(65, 224, 147, 0.18);
+  border-radius: 15px;
+  background: rgba(53, 206, 134, 0.06);
+}
+
+.configurationOpened > span {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 10px;
+  color: #06110c;
+  background: #4be29a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.configurationOpened div {
+  min-width: 0;
+}
+
+.configurationOpened strong {
+  display: block;
+  margin-bottom: 3px;
+  font-size: 10px;
+}
+
+.configurationOpened p {
+  margin: 0;
+  color: #678173;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.repeatConfigButton {
+  width: 100%;
+  padding: 9px;
+  color: #7184a4;
+  background: transparent;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.checkingConnection {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid rgba(83, 134, 255, 0.18);
+  border-radius: 16px;
+  background: rgba(54, 99, 204, 0.07);
+}
+
+.checkingConnection .loadingCircle {
+  border-color: rgba(84, 139, 255, 0.2);
+  border-top-color: #6d9cff;
+}
+
+.checkingConnection strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+}
+
+.checkingConnection p {
+  margin: 0;
+  color: #68768d;
+  font-size: 8px;
+}
+
+/* =========================================
+   МИНИ-КАРТОЧКА ПОДПИСКИ
+   ========================================= */
+
+.subscriptionMiniCard {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  margin-top: 15px;
+  padding: 16px;
+  border: 1px solid rgba(97, 139, 255, 0.14);
+  border-radius: 19px;
+  background: rgba(48, 78, 143, 0.06);
+}
+
+.subscriptionMiniCard div {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.subscriptionMiniCard div + div {
+  padding-left: 16px;
+  border-left: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.subscriptionMiniCard span {
+  color: #68768c;
+  font-size: 8px;
+}
+
+.subscriptionMiniCard strong {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* =========================================
+   ФИНАЛЬНЫЙ ЭКРАН
+   ========================================= */
+
+.connectedHome {
+  padding-top: 28px;
+  text-align: center;
+  animation: fadeUp 0.35s ease;
+}
+
+.connectedIcon {
+  display: grid;
+  width: 94px;
+  height: 94px;
+  margin: 0 auto 19px;
+  place-items: center;
+  border: 1px solid rgba(76, 232, 157, 0.32);
+  border-radius: 32px;
+  color: #06120c;
+  background:
+    linear-gradient(
+      145deg,
+      #59eca5,
+      #37cf85
+    );
+  box-shadow:
+    0 20px 60px rgba(55, 216, 139, 0.23),
+    inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  font-size: 42px;
+  font-weight: 900;
+}
+
+.connectedHome h1 {
+  margin: 17px 0 10px;
+  font-size: 40px;
+  letter-spacing: -0.06em;
+}
+
+.connectedHome > p {
+  max-width: 370px;
+  margin: 0 auto 22px;
+  color: #748298;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.connectionInformationCard {
+  display: grid;
+  gap: 13px;
+  margin-bottom: 14px;
   padding: 18px;
-  border: 1px solid rgba(255, 255, 255, 0.075);
+  border: 1px solid rgba(70, 225, 148, 0.14);
   border-radius: 21px;
   background:
     linear-gradient(
       145deg,
-      rgba(255, 255, 255, 0.05),
+      rgba(47, 179, 116, 0.07),
       rgba(255, 255, 255, 0.02)
     );
+  text-align: left;
 }
 
-.subscriptionStatusHeader {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-
-.subscriptionIcon {
-  display: grid;
-  place-items: center;
-  width: 43px;
-  height: 43px;
-  flex: 0 0 auto;
-  border-radius: 14px;
-  color: #80a8ff;
-  background: rgba(58, 103, 217, 0.12);
-  font-size: 22px;
-}
-
-.subscriptionStatusHeader div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.subscriptionStatusHeader div span {
-  color: #66748b;
-  font-size: 10px;
-}
-
-.subscriptionStatusHeader div strong {
-  font-size: 13px;
-}
-
-.subscriptionDetails {
-  display: grid;
-  gap: 11px;
-  margin-top: 17px;
-  padding-top: 15px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
-}
-
-.subscriptionDetails div {
+.connectionInformationCard div {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
 }
 
-.subscriptionDetails span {
-  color: #66748b;
-  font-size: 10px;
+.connectionInformationCard span {
+  color: #6b798e;
+  font-size: 9px;
 }
 
-.subscriptionDetails strong {
-  font-size: 11px;
+.connectionInformationCard strong {
+  font-size: 10px;
   text-align: right;
 }
 
-.secondaryButton {
-  width: 100%;
-  min-height: 45px;
-  margin-top: 17px;
-  border: 1px solid rgba(78, 132, 255, 0.45);
-  border-radius: 14px;
-  color: #84aaff;
-  background: rgba(57, 105, 218, 0.1);
-  font-size: 12px;
-  font-weight: 800;
+.connectedText {
+  color: #4ae197 !important;
 }
 
-.profileMenuItem {
-  display: grid;
-  width: 100%;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: center;
-  margin-top: 11px;
-  padding: 15px;
-  border: 1px solid rgba(255, 255, 255, 0.065);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.025);
-  text-align: left;
-}
+/* =========================================
+   МОДАЛЬНОЕ ОКНО НЕДОСТАТОЧНОГО БАЛАНСА
+   ========================================= */
 
-.menuIcon {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 13px;
-  color: #7fa8ff;
-  background: rgba(60, 107, 222, 0.11);
-  font-size: 16px;
-  font-weight: 900;
-}
-
-.profileMenuItem > span:nth-child(2) {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.profileMenuItem strong {
-  font-size: 12px;
-}
-
-.profileMenuItem small {
-  color: #626f85;
-  font-size: 9px;
-}
-
-.profileMenuItem b {
-  color: #6c7a91;
-  font-size: 22px;
-}
-
-.notificationInformation {
-  display: flex;
-  gap: 11px;
-  align-items: flex-start;
-  margin-top: 17px;
-  padding: 15px;
-  border: 1px solid rgba(88, 134, 255, 0.12);
-  border-radius: 17px;
-  background: rgba(49, 83, 160, 0.06);
-}
-
-.notificationInformation span {
-  font-size: 17px;
-}
-
-.notificationInformation p {
-  margin: 0;
-  color: #68768c;
-  font-size: 10px;
-  line-height: 1.5;
-}
-
-.bottomNav {
-  position: fixed;
-  z-index: 20;
-  right: max(18px, calc((100vw - 520px) / 2 + 18px));
-  bottom: calc(16px + env(safe-area-inset-bottom));
-  left: max(18px, calc((100vw - 520px) / 2 + 18px));
-  display: grid;
-  max-width: 484px;
-  min-height: 78px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 4px;
-  padding: 7px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 24px;
-  background: rgba(9, 13, 23, 0.88);
-  box-shadow:
-    0 20px 55px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.055);
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-}
-
-.bottomNav button {
-  display: flex;
-  min-width: 0;
-  min-height: 62px;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 5px;
-  padding: 6px 2px;
-  border-radius: 18px;
-  color: #69758a;
-  background: transparent;
-  transition:
-    color 0.2s ease,
-    background 0.2s ease;
-}
-
-.bottomNav button span {
-  font-size: 21px;
-  line-height: 1;
-}
-
-.bottomNav button small {
-  max-width: 100%;
-  overflow: hidden;
-  font-size: 9px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.bottomNav button.active {
-  color: #7ba7ff;
-  background:
-    linear-gradient(
-      145deg,
-      rgba(53, 104, 225, 0.2),
-      rgba(69, 62, 171, 0.12)
-    );
-  box-shadow:
-    inset 0 0 0 1px rgba(91, 138, 255, 0.09),
-    0 8px 18px rgba(30, 70, 173, 0.12);
-}
-
-.modalOverlay {
-  position: fixed;
-  z-index: 100;
-  inset: 0;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 16px;
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
-
-.paymentModal,
-.successModal {
-  width: 100%;
-  max-width: 500px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background:
-    radial-gradient(
-      circle at 80% 10%,
-      rgba(67, 101, 255, 0.17),
-      transparent 32%
-    ),
-    #0b0f18;
-  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.62);
-}
-
-.paymentModal {
-  padding: 12px 19px 23px;
-  border-radius: 27px 27px 22px 22px;
-  animation: slideUp 0.28s ease;
-}
-
-.modalHandle {
-  width: 42px;
-  height: 4px;
-  margin: 0 auto 19px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.17);
-}
-
-.modalHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 15px;
-}
-
-.modalHeader div {
-  display: flex;
-  flex-direction: column;
-}
-
-.modalHeader span {
-  margin-bottom: 3px;
-  color: #5d81c2;
-  font-size: 8px;
-  font-weight: 900;
-  letter-spacing: 0.18em;
-}
-
-.modalHeader h3 {
-  margin: 0;
-  font-size: 22px;
-}
-
-.modalHeader button {
-  width: 38px;
-  height: 38px;
-  border-radius: 13px;
-  color: #8792a4;
-  background: rgba(255, 255, 255, 0.055);
-  font-size: 24px;
-}
-
-.paymentModal > p {
-  margin: 16px 0;
-  color: #68758a;
-  font-size: 11px;
-  line-height: 1.55;
-}
-
-.depositAmounts {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-}
-
-.depositAmounts button {
-  min-height: 54px;
-  border: 1px solid rgba(79, 132, 255, 0.22);
-  border-radius: 16px;
-  color: #8caeff;
-  background: rgba(54, 102, 213, 0.08);
-  font-size: 14px;
-  font-weight: 800;
-}
-
-.successModal {
-  align-self: center;
-  padding: 31px 22px;
-  border-radius: 27px;
+.warningModal {
   text-align: center;
-  animation: fadeUp 0.28s ease;
 }
 
-.successIcon {
+.warningIcon {
   display: grid;
-  place-items: center;
   width: 72px;
   height: 72px;
   margin: 0 auto 18px;
+  place-items: center;
+  border: 1px solid rgba(239, 174, 90, 0.3);
   border-radius: 50%;
-  color: #05110b;
-  background: #4be59a;
-  box-shadow: 0 0 36px rgba(75, 229, 154, 0.32);
+  color: #171006;
+  background:
+    linear-gradient(
+      145deg,
+      #f0b35e,
+      #de8e42
+    );
+  box-shadow: 0 0 34px rgba(229, 154, 67, 0.25);
   font-size: 31px;
   font-weight: 900;
 }
 
-.successModal h3 {
-  margin: 0 0 9px;
-  font-size: 23px;
-}
-
-.successModal p {
-  margin: 0 0 22px;
-  color: #6d7a90;
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-@keyframes fadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(9px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes slideUp {
-  from {
-    opacity: 0;
-    transform: translateY(45px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@media (min-width: 700px) {
-  .phone {
-    padding-top: 34px;
-  }
-}
+/* =========================================
+   АДАПТАЦИЯ ДЛЯ МАЛЕНЬКИХ ЭКРАНОВ
+   ========================================= */
 
 @media (max-width: 390px) {
-  .phone {
-    padding-right: 14px;
-    padding-left: 14px;
+  .setupHeading h1 {
+    font-size: 32px;
   }
 
-  .brandLogo,
-  .avatar {
-    width: 40px;
-    height: 40px;
-  }
-
-  .brandText strong {
-    font-size: 19px;
-  }
-
-  .hero h1 {
-    font-size: 41px;
-  }
-
-  .planCard {
+  .setupStep {
     gap: 10px;
-    padding: 14px;
+    padding: 15px;
   }
 
-  .planInformation > small {
-    display: none;
+  .downloadButtons {
+    grid-template-columns: 1fr;
   }
 
-  .planPrice strong {
-    font-size: 13px;
+  .connectedHome h1 {
+    font-size: 35px;
   }
 
-  .profileStatus {
-    display: none;
-  }
-
-  .bottomNav {
-    right: 12px;
-    left: 12px;
+  .connectedIcon {
+    width: 82px;
+    height: 82px;
+    border-radius: 27px;
+    font-size: 36px;
   }
 }
