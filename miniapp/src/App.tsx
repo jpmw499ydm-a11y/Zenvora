@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
 
 type Page = "home" | "servers" | "bypass" | "subscription" | "profile";
@@ -6,7 +6,9 @@ type Page = "home" | "servers" | "bypass" | "subscription" | "profile";
 export default function App() {
   const [connected, setConnected] = useState(false);
   const [page, setPage] = useState<Page>("home");
-
+useEffect(() => {
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}, [page]);
   return (
     <div className="app">
       <div className="backgroundGlow backgroundGlowOne" />
