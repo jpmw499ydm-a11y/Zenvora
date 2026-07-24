@@ -26,6 +26,18 @@ type DatabaseUser = {
     | "connected";
 };
 
+type DatabaseTransaction = {
+  id: number | string;
+  title: string;
+  amount_rub: number;
+  kind: "deposit" | "subscription";
+  status: "pending" | "confirmed" | "declined";
+  provider: string;
+  external_id: string;
+  created_at: string;
+  updated_at: string;
+};
+
 const encoder = new TextEncoder();
 
 function sendJson(data: unknown, status = 200) {
@@ -38,11 +50,21 @@ function sendJson(data: unknown, status = 200) {
   });
 }
 
+function getEnvironmentVariable(name: string): string {
+  const value = process.env[name];
+
+  if (!value) {
+    throw new Error(
+      `На сервере не настроена переменная ${name}`,
+    );
+  }
+
+  return value;
+}
+
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const buffer = new ArrayBuffer(bytes.byteLength);
-
   new Uint8Array(buffer).set(bytes);
-
   return buffer;
 }
 
@@ -50,14 +72,9 @@ async function createHmac(
   key: Uint8Array,
   text: string,
 ): Promise<Uint8Array> {
-  const keyBuffer = toArrayBuffer(key);
-  const textBuffer = toArrayBuffer(
-    encoder.encode(text),
-  );
-
   const cryptoKey = await crypto.subtle.importKey(
     "raw",
-    keyBuffer,
+    toArrayBuffer(key),
     {
       name: "HMAC",
       hash: "SHA-256",
@@ -69,7 +86,7 @@ async function createHmac(
   const signature = await crypto.subtle.sign(
     "HMAC",
     cryptoKey,
-    textBuffer,
+    encoder.encode(text),
   );
 
   return new Uint8Array(signature);
@@ -77,30 +94,20 @@ async function createHmac(
 
 function bytesToHex(bytes: Uint8Array) {
   return Array.from(bytes)
-    .map((byte) =>
-      byte.toString(16).padStart(2, "0"),
-    )
+    .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 }
 
-function hashesAreEqual(
-  first: string,
-  second: string,
-) {
+function hashesAreEqual(first: string, second: string) {
   if (first.length !== second.length) {
     return false;
   }
 
   let difference = 0;
 
-  for (
-    let index = 0;
-    index < first.length;
-    index += 1
-  ) {
+  for (let index = 0; index < first.length; index += 1) {
     difference |=
-      first.charCodeAt(index) ^
-      second.charCodeAt(index);
+      first.charCodeAt(index) ^ second.charCodeAt(index);
   }
 
   return difference === 0;
@@ -114,16 +121,12 @@ async function validateTelegramData(
   const receivedHash = params.get("hash");
 
   if (!receivedHash) {
-    throw new Error(
-      "Telegram не передал подпись",
-    );
+    throw new Error("Telegram не передал подпись");
   }
 
   params.delete("hash");
 
-  const dataCheckString = Array.from(
-    params.entries(),
-  )
+  const dataCheckString = Array.from(params.entries())
     .sort(([firstKey], [secondKey]) =>
       firstKey.localeCompare(secondKey),
     )
@@ -136,10 +139,7 @@ async function validateTelegramData(
   );
 
   const calculatedHash = bytesToHex(
-    await createHmac(
-      secretKey,
-      dataCheckString,
-    ),
+    await createHmac(secretKey, dataCheckString),
   );
 
   if (
@@ -148,102 +148,55 @@ async function validateTelegramData(
       receivedHash.toLowerCase(),
     )
   ) {
-    throw new Error(
-      "Подпись Telegram недействительна",
-    );
+    throw new Error("Подпись Telegram недействительна");
   }
 
-  const authDate = Number(
-    params.get("auth_date"),
-  );
-
-  const currentTime = Math.floor(
-    Date.now() / 1000,
-  );
-
-  if (!Number.isFinite(authDate)) {
-    throw new Error(
-      "Некорректная дата Telegram",
-    );
-  }
+  const authDate = Number(params.get("auth_date"));
+  const currentTime = Math.floor(Date.now() / 1000);
 
   if (
+    !Number.isFinite(authDate) ||
     currentTime - authDate > 86400 ||
     authDate > currentTime + 60
   ) {
-    throw new Error(
-      "Данные Telegram устарели",
-    );
+    throw new Error("Данные Telegram устарели");
   }
 
   const rawUser = params.get("user");
 
   if (!rawUser) {
-    throw new Error(
-      "Telegram не передал пользователя",
-    );
+    throw new Error("Telegram не передал пользователя");
   }
 
-  const user = JSON.parse(
-    rawUser,
-  ) as TelegramUser;
+  const user = JSON.parse(rawUser) as TelegramUser;
 
   if (
     !Number.isSafeInteger(user.id) ||
     typeof user.first_name !== "string" ||
     user.first_name.length === 0
   ) {
-    throw new Error(
-      "Некорректный пользователь Telegram",
-    );
+    throw new Error("Некорректный пользователь Telegram");
   }
 
   return user;
-}
-
-function getEnvironmentVariable(
-  name: string,
-): string {
-  const value = process.env[name];
-
-  if (!value) {
-    throw new Error(
-      `На сервере не настроена переменная ${name}`,
-    );
-  }
-
-  return value;
 }
 
 async function supabaseRequest(
   path: string,
   options: RequestInit = {},
 ): Promise<Response> {
-  const supabaseUrl =
-    getEnvironmentVariable("SUPABASE_URL");
+  const supabaseUrl = getEnvironmentVariable("SUPABASE_URL");
+  const secretKey = getEnvironmentVariable("SUPABASE_SECRET_KEY");
 
-  const secretKey =
-    getEnvironmentVariable(
-      "SUPABASE_SECRET_KEY",
-    );
-
-  const headers = new Headers(
-    options.headers,
-  );
-
-  headers.set("apikey", secretKey);
-  headers.set(
-    "Content-Type",
-    "application/json",
-  );
-
-  return fetch(
-    `${supabaseUrl}/rest/v1/${path}`,
-    {
-      ...options,
-      headers,
+  return fetch(`${supabaseUrl}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      apikey: secretKey,
+      Authorization: `Bearer ${secretKey}`,
+      "Content-Type": "application/json",
+      ...options.headers,
     },
-  );
+  });
 }
 
 async function saveTelegramUser(
@@ -254,66 +207,73 @@ async function saveTelegramUser(
     {
       method: "POST",
       headers: {
-        Prefer:
-          "resolution=merge-duplicates,return=representation",
+        Prefer: "resolution=merge-duplicates,return=representation",
       },
       body: JSON.stringify({
         telegram_id: telegramUser.id,
-        username:
-          telegramUser.username ?? null,
-        first_name:
-          telegramUser.first_name,
-        last_name:
-          telegramUser.last_name ?? null,
-        photo_url:
-          telegramUser.photo_url ?? null,
-        updated_at:
-          new Date().toISOString(),
+        username: telegramUser.username ?? null,
+        first_name: telegramUser.first_name,
+        last_name: telegramUser.last_name ?? null,
+        photo_url: telegramUser.photo_url ?? null,
+        updated_at: new Date().toISOString(),
       }),
     },
   );
 
   if (!response.ok) {
-    const errorText =
-      await response.text();
-
-    throw new Error(
-      `Ошибка сохранения пользователя: ${errorText}`,
-    );
+    const errorText = await response.text();
+    throw new Error(`Ошибка сохранения пользователя: ${errorText}`);
   }
 
-  const users =
-    (await response.json()) as DatabaseUser[];
-
+  const users = (await response.json()) as DatabaseUser[];
   const user = users[0];
 
   if (!user) {
-    throw new Error(
-      "Supabase не вернул данные пользователя",
-    );
+    throw new Error("Supabase не вернул данные пользователя");
   }
 
   return user;
 }
 
+async function loadTransactions(
+  telegramId: number,
+): Promise<DatabaseTransaction[]> {
+  const query = new URLSearchParams({
+    telegram_id: `eq.${telegramId}`,
+    select:
+      "id,title,amount_rub,kind,status,provider,external_id,created_at,updated_at",
+    order: "created_at.desc",
+    limit: "100",
+  });
+
+  const response = await supabaseRequest(
+    `account_transactions?${query.toString()}`,
+    {
+      method: "GET",
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Ошибка загрузки истории: ${errorText}`);
+  }
+
+  return (await response.json()) as DatabaseTransaction[];
+}
+
 export default {
-  async fetch(
-    request: Request,
-  ): Promise<Response> {
+  async fetch(request: Request): Promise<Response> {
     if (request.method !== "POST") {
       return sendJson(
         {
           ok: false,
-          error:
-            "Используйте POST-запрос",
+          error: "Используйте POST-запрос",
         },
         405,
       );
     }
 
-    let body: {
-      initData?: unknown;
-    };
+    let body: { initData?: unknown };
 
     try {
       body = (await request.json()) as {
@@ -323,8 +283,7 @@ export default {
       return sendJson(
         {
           ok: false,
-          error:
-            "Некорректное тело запроса",
+          error: "Некорректное тело запроса",
         },
         400,
       );
@@ -337,75 +296,48 @@ export default {
       return sendJson(
         {
           ok: false,
-          error:
-            "Откройте Zenvora через Telegram-бота",
-        },
-        401,
-      );
-    }
-
-    let telegramUser: TelegramUser;
-
-    try {
-      const botToken =
-        getEnvironmentVariable(
-          "TELEGRAM_BOT_TOKEN",
-        );
-
-      telegramUser =
-        await validateTelegramData(
-          body.initData,
-          botToken,
-        );
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "Не удалось проверить данные Telegram";
-
-      return sendJson(
-        {
-          ok: false,
-          error: message,
+          error: "Откройте Zenvora через Telegram-бота",
         },
         401,
       );
     }
 
     try {
-      const user =
-        await saveTelegramUser(
-          telegramUser,
-        );
+      const telegramUser = await validateTelegramData(
+        body.initData,
+        getEnvironmentVariable("TELEGRAM_BOT_TOKEN"),
+      );
+
+      const user = await saveTelegramUser(telegramUser);
+      const transactions = await loadTransactions(telegramUser.id);
 
       return sendJson({
         ok: true,
         user: {
-          telegramId:
-            user.telegram_id,
-          username:
-            user.username,
-          firstName:
-            user.first_name,
-          lastName:
-            user.last_name,
-          photoUrl:
-            user.photo_url,
-          balance:
-            user.balance,
-          subscriptionEnd:
-            user.subscription_end,
-          activePlanTitle:
-            user.active_plan_title,
-          setupStatus:
-            user.setup_status,
+          telegramId: user.telegram_id,
+          username: user.username,
+          firstName: user.first_name,
+          lastName: user.last_name,
+          photoUrl: user.photo_url,
+          balance: user.balance,
+          subscriptionEnd: user.subscription_end,
+          activePlanTitle: user.active_plan_title,
+          setupStatus: user.setup_status,
         },
+        transactions: transactions.map((transaction) => ({
+          id: String(transaction.id),
+          title: transaction.title,
+          amount: transaction.amount_rub,
+          type: transaction.kind,
+          status: transaction.status,
+          provider: transaction.provider,
+          externalId: transaction.external_id,
+          createdAt: transaction.created_at,
+          updatedAt: transaction.updated_at,
+        })),
       });
     } catch (error) {
-      console.error(
-        "Ошибка /api/me:",
-        error,
-      );
+      console.error("Ошибка /api/me:", error);
 
       const message =
         error instanceof Error
