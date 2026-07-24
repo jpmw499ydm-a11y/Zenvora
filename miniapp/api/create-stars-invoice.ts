@@ -9,25 +9,30 @@ type TelegramUser = {
 
 type DepositAmount = 300 | 500 | 1000 | 2000;
 
-type TelegramApiResponse<T> =
+type CryptoPayInvoice = {
+  invoice_id: number;
+  status: string;
+  payload?: string;
+  bot_invoice_url?: string;
+  mini_app_invoice_url?: string;
+  web_app_invoice_url?: string;
+  pay_url?: string;
+};
+
+type CryptoPayResponse<T> =
   | {
       ok: true;
       result: T;
     }
   | {
       ok: false;
-      description?: string;
-      error_code?: number;
+      error?: {
+        name?: string;
+        code?: number;
+      };
     };
 
 const encoder = new TextEncoder();
-
-const starsByDepositAmount: Record<DepositAmount, number> = {
-  300: 160,
-  500: 283,
-  1000: 550,
-  2000: 1000,
-};
 
 function sendJson(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -180,23 +185,20 @@ function isDepositAmount(value: unknown): value is DepositAmount {
   );
 }
 
-function getProductionBaseUrl(request: Request) {
-  const configuredUrl = process.env.PUBLIC_APP_URL?.trim();
-  const baseUrl = configuredUrl || new URL(request.url).origin;
-
-  return baseUrl.replace(/\/+$/, "");
-}
-
-async function callTelegramApi<T>(
-  botToken: string,
+async function callCryptoPay<T>(
   method: string,
   body: Record<string, unknown>,
 ): Promise<T> {
+  const token = getEnvironmentVariable(
+    "CRYPTO_PAY_API_TOKEN",
+  );
+
   const response = await fetch(
-    `https://api.telegram.org/bot${botToken}/${method}`,
+    `https://pay.crypt.bot/api/${method}`,
     {
       method: "POST",
       headers: {
+        "Crypto-Pay-API-Token": token,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(body),
@@ -204,60 +206,37 @@ async function callTelegramApi<T>(
   );
 
   const result =
-    (await response.json()) as TelegramApiResponse<T>;
+    (await response.json()) as CryptoPayResponse<T>;
 
   if (!response.ok || result.ok === false) {
-    const description =
+    const errorName =
       result.ok === false
-        ? result.description
+        ? result.error?.name
         : undefined;
 
     throw new Error(
-      description ||
-        `Telegram API вернул ошибку ${response.status}`,
+      errorName ||
+        `Crypto Pay вернул ошибку ${response.status}`,
     );
   }
 
   return result.result;
 }
 
-async function ensureTelegramWebhook(
-  request: Request,
-  botToken: string,
-) {
-  const webhookSecret = getEnvironmentVariable(
-    "TELEGRAM_WEBHOOK_SECRET",
-  );
-
-  if (!/^[A-Za-z0-9_-]{16,256}$/.test(webhookSecret)) {
-    throw new Error(
-      "TELEGRAM_WEBHOOK_SECRET должен содержать 16–256 латинских букв, цифр, _ или -",
-    );
-  }
-
-  const webhookUrl = `${getProductionBaseUrl(
-    request,
-  )}/api/telegram-webhook`;
-
-  await callTelegramApi<boolean>(
-    botToken,
-    "setWebhook",
-    {
-      url: webhookUrl,
-      secret_token: webhookSecret,
-      allowed_updates: [
-        "message",
-        "pre_checkout_query",
-      ],
-    },
+function getInvoiceUrl(invoice: CryptoPayInvoice) {
+  return (
+    invoice.mini_app_invoice_url ||
+    invoice.bot_invoice_url ||
+    invoice.web_app_invoice_url ||
+    invoice.pay_url ||
+    ""
   );
 }
 
 async function savePendingTransaction(
   telegramId: number,
-  externalId: string,
+  invoice: CryptoPayInvoice,
   amount: DepositAmount,
-  stars: number,
 ) {
   const supabaseUrl = getEnvironmentVariable(
     "SUPABASE_URL",
@@ -278,13 +257,15 @@ async function savePendingTransaction(
       body: JSON.stringify({
         p_telegram_id: telegramId,
         p_kind: "deposit",
-        p_provider: "telegram_stars",
-        p_title: "Пополнение через Telegram Stars",
+        p_provider: "crypto_bot",
+        p_title: "Пополнение через Crypto Bot",
         p_amount_rub: amount,
         p_status: "pending",
-        p_external_id: externalId,
+        p_external_id: String(invoice.invoice_id),
         p_metadata: {
-          stars,
+          invoiceId: invoice.invoice_id,
+          cryptoPayStatus: invoice.status,
+          acceptedAssets: ["USDT", "TON"],
         },
       }),
     },
@@ -296,6 +277,16 @@ async function savePendingTransaction(
     throw new Error(
       `Не удалось сохранить операцию: ${errorText}`,
     );
+  }
+}
+
+async function deleteInvoiceQuietly(invoiceId: number) {
+  try {
+    await callCryptoPay<boolean>("deleteInvoice", {
+      invoice_id: invoiceId,
+    });
+  } catch {
+    // Счёт будет удалён по возможности.
   }
 }
 
@@ -354,77 +345,77 @@ export default {
       );
     }
 
-    try {
-      const botToken = getEnvironmentVariable(
-        "TELEGRAM_BOT_TOKEN",
-      );
+    let createdInvoice: CryptoPayInvoice | null = null;
 
+    try {
       const telegramUser = await validateTelegramData(
         body.initData,
-        botToken,
+        getEnvironmentVariable("TELEGRAM_BOT_TOKEN"),
       );
-
-      await ensureTelegramWebhook(request, botToken);
-
-      const stars = starsByDepositAmount[body.amount];
-      const externalId = crypto.randomUUID();
 
       const payload = JSON.stringify({
         v: 1,
-        i: externalId,
         t: telegramUser.id,
         r: body.amount,
-        s: stars,
       });
 
-      if (encoder.encode(payload).byteLength > 128) {
-        throw new Error("Слишком длинные данные платежа");
-      }
-
-      const invoiceUrl = await callTelegramApi<string>(
-        botToken,
-        "createInvoiceLink",
+      createdInvoice = await callCryptoPay<CryptoPayInvoice>(
+        "createInvoice",
         {
-          title: "Пополнение Zenvora",
-          description: `Зачисление ${body.amount} ₽ на баланс Zenvora`,
+          currency_type: "fiat",
+          fiat: "RUB",
+          amount: String(body.amount),
+          accepted_assets: "USDT,TON",
+          description: `Пополнение баланса Zenvora на ${body.amount} ₽`,
           payload,
-          currency: "XTR",
-          prices: [
-            {
-              label: `${body.amount} ₽ на баланс`,
-              amount: stars,
-            },
-          ],
+          allow_comments: false,
+          allow_anonymous: false,
+          expires_in: 3600,
         },
       );
 
+      const invoiceUrl = getInvoiceUrl(createdInvoice);
+
+      if (
+        !Number.isSafeInteger(createdInvoice.invoice_id) ||
+        !invoiceUrl
+      ) {
+        throw new Error(
+          "Crypto Pay вернул неполные данные счёта",
+        );
+      }
+
       await savePendingTransaction(
         telegramUser.id,
-        externalId,
+        createdInvoice,
         body.amount,
-        stars,
       );
 
       return sendJson({
         ok: true,
         invoice: {
+          invoiceId: createdInvoice.invoice_id,
           amount: body.amount,
-          stars,
           url: invoiceUrl,
-          externalId,
-          status: "pending",
+          status: createdInvoice.status || "active",
         },
       });
     } catch (error) {
+      if (createdInvoice?.invoice_id) {
+        await deleteInvoiceQuietly(
+          createdInvoice.invoice_id,
+        );
+      }
+
       console.error(
-        "Ошибка /api/create-stars-invoice:",
+        "Ошибка /api/create-crypto-invoice:",
         error,
       );
 
       const message =
         error instanceof Error
           ? error.message
-          : "Не удалось создать счёт Telegram Stars";
+          : "Не удалось создать счёт Crypto Bot";
 
       return sendJson(
         {
