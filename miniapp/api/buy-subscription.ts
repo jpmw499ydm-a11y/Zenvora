@@ -1,3 +1,7 @@
+declare const process: {
+  env: Record<string, string | undefined>;
+};
+
 type TelegramUser = {
   id: number;
   first_name: string;
@@ -28,7 +32,9 @@ function sendJson(data: unknown, status = 200) {
   });
 }
 
-function getEnvironmentVariable(name: string) {
+function getEnvironmentVariable(
+  name: string,
+): string {
   const value = process.env[name];
 
   if (!value) {
@@ -40,44 +46,73 @@ function getEnvironmentVariable(name: string) {
   return value;
 }
 
+function toArrayBuffer(
+  bytes: Uint8Array,
+): ArrayBuffer {
+  const buffer = new ArrayBuffer(
+    bytes.byteLength,
+  );
+
+  new Uint8Array(buffer).set(bytes);
+
+  return buffer;
+}
+
 async function createHmac(
   key: Uint8Array,
   text: string,
 ): Promise<Uint8Array> {
-  const cryptoKey = await crypto.subtle.importKey(
-    "raw",
-    key,
-    {
-      name: "HMAC",
-      hash: "SHA-256",
-    },
-    false,
-    ["sign"],
-  );
+  const keyBuffer = toArrayBuffer(key);
 
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    cryptoKey,
+  const textBuffer = toArrayBuffer(
     encoder.encode(text),
   );
+
+  const cryptoKey =
+    await crypto.subtle.importKey(
+      "raw",
+      keyBuffer,
+      {
+        name: "HMAC",
+        hash: "SHA-256",
+      },
+      false,
+      ["sign"],
+    );
+
+  const signature =
+    await crypto.subtle.sign(
+      "HMAC",
+      cryptoKey,
+      textBuffer,
+    );
 
   return new Uint8Array(signature);
 }
 
 function bytesToHex(bytes: Uint8Array) {
   return Array.from(bytes)
-    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .map((byte) =>
+      byte.toString(16).padStart(2, "0"),
+    )
     .join("");
 }
 
-function hashesAreEqual(first: string, second: string) {
+function hashesAreEqual(
+  first: string,
+  second: string,
+) {
   if (first.length !== second.length) {
     return false;
   }
 
   let difference = 0;
 
-  for (let index = 0; index < first.length; index += 1) {
+  for (
+    let index = 0;
+    index < first.length;
+    index += 1
+  ) {
     difference |=
       first.charCodeAt(index) ^
       second.charCodeAt(index);
@@ -91,19 +126,28 @@ async function validateTelegramData(
   botToken: string,
 ): Promise<TelegramUser> {
   const params = new URLSearchParams(initData);
-  const receivedHash = params.get("hash");
+
+  const receivedHash =
+    params.get("hash");
 
   if (!receivedHash) {
-    throw new Error("Telegram не передал подпись");
+    throw new Error(
+      "Telegram не передал подпись",
+    );
   }
 
   params.delete("hash");
 
-  const dataCheckString = Array.from(params.entries())
+  const dataCheckString = Array.from(
+    params.entries(),
+  )
     .sort(([firstKey], [secondKey]) =>
       firstKey.localeCompare(secondKey),
     )
-    .map(([key, value]) => `${key}=${value}`)
+    .map(
+      ([key, value]) =>
+        `${key}=${value}`,
+    )
     .join("\n");
 
   const secretKey = await createHmac(
@@ -112,7 +156,10 @@ async function validateTelegramData(
   );
 
   const calculatedHash = bytesToHex(
-    await createHmac(secretKey, dataCheckString),
+    await createHmac(
+      secretKey,
+      dataCheckString,
+    ),
   );
 
   if (
@@ -121,33 +168,48 @@ async function validateTelegramData(
       receivedHash.toLowerCase(),
     )
   ) {
-    throw new Error("Подпись Telegram недействительна");
+    throw new Error(
+      "Подпись Telegram недействительна",
+    );
   }
 
-  const authDate = Number(params.get("auth_date"));
-  const currentTime = Math.floor(Date.now() / 1000);
+  const authDate = Number(
+    params.get("auth_date"),
+  );
+
+  const currentTime = Math.floor(
+    Date.now() / 1000,
+  );
 
   if (
     !Number.isFinite(authDate) ||
     currentTime - authDate > 86400 ||
     authDate > currentTime + 60
   ) {
-    throw new Error("Данные Telegram устарели");
+    throw new Error(
+      "Данные Telegram устарели",
+    );
   }
 
   const rawUser = params.get("user");
 
   if (!rawUser) {
-    throw new Error("Telegram не передал пользователя");
+    throw new Error(
+      "Telegram не передал пользователя",
+    );
   }
 
-  const user = JSON.parse(rawUser) as TelegramUser;
+  const user = JSON.parse(
+    rawUser,
+  ) as TelegramUser;
 
   if (
     !Number.isSafeInteger(user.id) ||
     typeof user.first_name !== "string"
   ) {
-    throw new Error("Некорректный пользователь Telegram");
+    throw new Error(
+      "Некорректный пользователь Telegram",
+    );
   }
 
   return user;
@@ -158,10 +220,14 @@ async function buySubscription(
   planId: PlanId,
 ): Promise<BuyResult> {
   const supabaseUrl =
-    getEnvironmentVariable("SUPABASE_URL");
+    getEnvironmentVariable(
+      "SUPABASE_URL",
+    );
 
   const secretKey =
-    getEnvironmentVariable("SUPABASE_SECRET_KEY");
+    getEnvironmentVariable(
+      "SUPABASE_SECRET_KEY",
+    );
 
   const response = await fetch(
     `${supabaseUrl}/rest/v1/rpc/buy_subscription`,
@@ -169,8 +235,10 @@ async function buySubscription(
       method: "POST",
       headers: {
         apikey: secretKey,
-        Authorization: `Bearer ${secretKey}`,
-        "Content-Type": "application/json",
+        Authorization:
+          `Bearer ${secretKey}`,
+        "Content-Type":
+          "application/json",
       },
       body: JSON.stringify({
         p_telegram_id: telegramId,
@@ -179,19 +247,38 @@ async function buySubscription(
     },
   );
 
-  const responseText = await response.text();
+  const responseText =
+    await response.text();
 
   if (!response.ok) {
-    if (responseText.includes("INSUFFICIENT_BALANCE")) {
-      throw new Error("INSUFFICIENT_BALANCE");
+    if (
+      responseText.includes(
+        "INSUFFICIENT_BALANCE",
+      )
+    ) {
+      throw new Error(
+        "INSUFFICIENT_BALANCE",
+      );
     }
 
-    if (responseText.includes("USER_NOT_FOUND")) {
-      throw new Error("USER_NOT_FOUND");
+    if (
+      responseText.includes(
+        "USER_NOT_FOUND",
+      )
+    ) {
+      throw new Error(
+        "USER_NOT_FOUND",
+      );
     }
 
-    if (responseText.includes("INVALID_PLAN")) {
-      throw new Error("INVALID_PLAN");
+    if (
+      responseText.includes(
+        "INVALID_PLAN",
+      )
+    ) {
+      throw new Error(
+        "INVALID_PLAN",
+      );
     }
 
     throw new Error(
@@ -199,7 +286,10 @@ async function buySubscription(
     );
   }
 
-  const rows = JSON.parse(responseText) as BuyResult[];
+  const rows = JSON.parse(
+    responseText,
+  ) as BuyResult[];
+
   const result = rows[0];
 
   if (!result) {
@@ -212,25 +302,30 @@ async function buySubscription(
 }
 
 export default {
-  async fetch(request: Request): Promise<Response> {
+  async fetch(
+    request: Request,
+  ): Promise<Response> {
     if (request.method !== "POST") {
       return sendJson(
         {
           ok: false,
-          error: "Используйте POST-запрос",
+          error:
+            "Используйте POST-запрос",
         },
         405,
       );
     }
 
     try {
-      const body = (await request.json()) as {
-        initData?: unknown;
-        planId?: unknown;
-      };
+      const body =
+        (await request.json()) as {
+          initData?: unknown;
+          planId?: unknown;
+        };
 
       if (
-        typeof body.initData !== "string" ||
+        typeof body.initData !==
+          "string" ||
         body.initData.length === 0
       ) {
         return sendJson(
@@ -251,7 +346,8 @@ export default {
         return sendJson(
           {
             ok: false,
-            error: "Выбран неправильный тариф",
+            error:
+              "Выбран неправильный тариф",
           },
           400,
         );
@@ -260,21 +356,28 @@ export default {
       const telegramUser =
         await validateTelegramData(
           body.initData,
-          getEnvironmentVariable("TELEGRAM_BOT_TOKEN"),
+          getEnvironmentVariable(
+            "TELEGRAM_BOT_TOKEN",
+          ),
         );
 
-      const result = await buySubscription(
-        telegramUser.id,
-        body.planId,
-      );
+      const result =
+        await buySubscription(
+          telegramUser.id,
+          body.planId,
+        );
 
       return sendJson({
         ok: true,
         subscription: {
-          balance: result.balance,
-          subscriptionEnd: result.subscription_end,
-          activePlanTitle: result.active_plan_title,
-          setupStatus: result.setup_status,
+          balance:
+            result.balance,
+          subscriptionEnd:
+            result.subscription_end,
+          activePlanTitle:
+            result.active_plan_title,
+          setupStatus:
+            result.setup_status,
         },
       });
     } catch (error) {
@@ -283,25 +386,32 @@ export default {
           ? error.message
           : "Неизвестная ошибка сервера";
 
-      if (message === "INSUFFICIENT_BALANCE") {
+      if (
+        message ===
+        "INSUFFICIENT_BALANCE"
+      ) {
         return sendJson(
           {
             ok: false,
-            error: "Недостаточно средств",
+            error:
+              "Недостаточно средств",
           },
           409,
         );
       }
 
       if (
-        message === "USER_NOT_FOUND" ||
-        message === "INVALID_PLAN"
+        message ===
+          "USER_NOT_FOUND" ||
+        message ===
+          "INVALID_PLAN"
       ) {
         return sendJson(
           {
             ok: false,
             error:
-              message === "USER_NOT_FOUND"
+              message ===
+              "USER_NOT_FOUND"
                 ? "Пользователь не найден"
                 : "Выбран неправильный тариф",
           },
