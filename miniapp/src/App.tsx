@@ -33,12 +33,24 @@ type Plan = {
 };
 
 type Transaction = {
-  id: number;
+  id: string;
   title: string;
   amount: number;
   date: string;
   type: TransactionType;
   status: TransactionStatus;
+};
+
+type ApiTransaction = {
+  id: string;
+  title: string;
+  amount: number;
+  type: TransactionType;
+  status: TransactionStatus;
+  provider: string;
+  externalId: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 type ApiUser = {
@@ -57,6 +69,7 @@ type MeApiResponse =
   | {
       ok: true;
       user: ApiUser;
+      transactions: ApiTransaction[];
     }
   | {
       ok: false;
@@ -255,6 +268,26 @@ function parseSubscriptionDate(value: string | null) {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
+function mapApiTransactions(
+  apiTransactions: ApiTransaction[],
+): Transaction[] {
+  return apiTransactions.map((transaction) => {
+    const createdAt = new Date(transaction.createdAt);
+    const date = Number.isNaN(createdAt.getTime())
+      ? transaction.createdAt
+      : formatDateTime(createdAt);
+
+    return {
+      id: transaction.id,
+      title: transaction.title,
+      amount: transaction.amount,
+      date,
+      type: transaction.type,
+      status: transaction.status,
+    };
+  });
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>("home");
 
@@ -440,6 +473,9 @@ export default function App() {
         );
 
         setSetupStatus(result.user.setupStatus);
+        setTransactions(
+          mapApiTransactions(result.transactions),
+        );
       } catch (error) {
         if (
           error instanceof DOMException &&
@@ -605,7 +641,7 @@ export default function App() {
 
       setTransactions((currentTransactions) => [
         {
-          id: Date.now(),
+          id: `subscription-local:${Date.now()}`,
           title: `Подписка на ${selectedPlan.title}`,
           amount: -selectedPlan.price,
           date: formatDateTime(new Date()),
@@ -677,7 +713,7 @@ export default function App() {
 
       setTransactions((currentTransactions) => [
         {
-          id: result.invoice.invoiceId,
+          id: `crypto:${result.invoice.invoiceId}`,
           title: "Пополнение через Crypto Bot",
           amount: selectedDepositAmount,
           date: formatDateTime(new Date()),
@@ -735,6 +771,9 @@ export default function App() {
       result.user.activePlanTitle ?? "",
     );
     setSetupStatus(result.user.setupStatus);
+    setTransactions(
+      mapApiTransactions(result.transactions),
+    );
   }
 
   async function refreshAfterStarsPayment(
@@ -817,7 +856,7 @@ export default function App() {
           if (status === "paid" || status === "pending") {
             setTransactions((currentTransactions) => [
               {
-                id: Date.now(),
+                id: `stars-local:${Date.now()}`,
                 title: "Пополнение через Telegram Stars",
                 amount: result.invoice.amount,
                 date: formatDateTime(new Date()),
