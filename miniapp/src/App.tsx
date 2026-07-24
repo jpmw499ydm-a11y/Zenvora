@@ -60,6 +60,21 @@ type MeApiResponse =
       error: string;
     };
 
+type BuySubscriptionApiResponse =
+  | {
+      ok: true;
+      subscription: {
+        balance: number;
+        subscriptionEnd: string;
+        activePlanTitle: string;
+        setupStatus: SetupStatus;
+      };
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 type TelegramWebApp = {
   initData: string;
   ready: () => void;
@@ -226,6 +241,18 @@ export default function App() {
   const [showBalanceModal, setShowBalanceModal] =
     useState(false);
 
+  const [showTelegramModal, setShowTelegramModal] =
+  useState(false);
+
+const [telegramInitData, setTelegramInitData] =
+  useState("");
+
+const [purchaseLoading, setPurchaseLoading] =
+  useState(false);
+
+const [purchaseError, setPurchaseError] =
+  useState<string | null>(null);
+
   const [transactions, setTransactions] = useState<
     Transaction[]
   >([]);
@@ -291,9 +318,11 @@ export default function App() {
         telegramApp?.ready();
         telegramApp?.expand();
 
-        const initData = telegramApp?.initData ?? "";
+       const initData = telegramApp?.initData ?? "";
 
-        if (!initData) {
+setTelegramInitData(initData);
+
+if (!initData) {
           throw new Error(
             "Откройте Zenvora через кнопку Mini App в Telegram-боте.",
           );
@@ -422,7 +451,125 @@ export default function App() {
     setShowSuccessModal(true);
   }
 
-  function createDeposit(amount: number) {
+  function requireTelegram() {
+  if (telegramInitData) {
+    return true;
+  }
+
+  setShowDepositModal(false);
+  setShowBalanceModal(false);
+  setShowTelegramModal(true);
+
+  return false;
+}
+
+function openDepositModal() {
+  if (!requireTelegram()) {
+    return;
+  }
+
+  setShowDepositModal(true);
+}
+
+async function buySubscription() {
+  if (!requireTelegram()) {
+    return;
+  }
+
+  if (purchaseLoading) {
+    return;
+  }
+
+  if (balance < selectedPlan.price) {
+    setShowBalanceModal(true);
+    return;
+  }
+
+  try {
+    setPurchaseLoading(true);
+    setPurchaseError(null);
+
+    const response = await fetch("/api/buy-subscription", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        initData: telegramInitData,
+        planId: selectedPlan.id,
+      }),
+    });
+
+    const contentType =
+      response.headers.get("content-type") ?? "";
+
+    if (!contentType.includes("application/json")) {
+      throw new Error(
+        `Сервер вернул ошибку ${response.status}`,
+      );
+    }
+
+    const result =
+      (await response.json()) as BuySubscriptionApiResponse;
+
+    if (!response.ok || !result.ok) {
+      const message =
+        result.ok === false
+          ? result.error
+          : "Не удалось оформить подписку";
+
+      if (
+        response.status === 409 ||
+        message === "Недостаточно средств"
+      ) {
+        setShowBalanceModal(true);
+        return;
+      }
+
+      throw new Error(message);
+    }
+
+    const newSubscriptionEnd = parseSubscriptionDate(
+      result.subscription.subscriptionEnd,
+    );
+
+    if (!newSubscriptionEnd) {
+      throw new Error(
+        "Сервер вернул неправильную дату подписки",
+      );
+    }
+
+    setBalance(result.subscription.balance);
+    setSubscriptionEnd(newSubscriptionEnd);
+    setActivePlanTitle(
+      result.subscription.activePlanTitle,
+    );
+    setSetupStatus(result.subscription.setupStatus);
+
+    setTransactions((currentTransactions) => [
+      {
+        id: Date.now(),
+        title: `Подписка на ${selectedPlan.title}`,
+        amount: -selectedPlan.price,
+        date: formatDateTime(new Date()),
+        type: "subscription",
+        status: "confirmed",
+      },
+      ...currentTransactions,
+    ]);
+
+    setShowSuccessModal(true);
+  } catch (error) {
+    const message =
+      error instanceof Error
+        ? error.message
+        : "Не удалось оформить подписку";
+
+    setPurchaseError(message);
+  } finally {
+    setPurchaseLoading(false);
+  }
+}
     setTransactions((currentTransactions) => [
       {
         id: Date.now(),
