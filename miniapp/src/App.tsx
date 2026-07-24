@@ -1,4 +1,3 @@
-// ZENVORA_PAYMENT_V2
 import {
   useEffect,
   useMemo,
@@ -96,11 +95,35 @@ type CreateCryptoInvoiceApiResponse =
       error: string;
     };
 
+type InvoiceStatus =
+  | "paid"
+  | "cancelled"
+  | "failed"
+  | "pending";
+
+type CreateStarsInvoiceApiResponse =
+  | {
+      ok: true;
+      invoice: {
+        amount: DepositAmount;
+        stars: number;
+        url: string;
+      };
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 type TelegramWebApp = {
   initData: string;
   ready: () => void;
   expand: () => void;
   openLink?: (url: string) => void;
+  openInvoice?: (
+    url: string,
+    callback?: (status: InvoiceStatus) => void,
+  ) => void;
 };
 
 declare global {
@@ -179,6 +202,13 @@ const plans: Plan[] = [
     description: "Максимальная выгода",
   },
 ];
+
+const starsByDepositAmount: Record<DepositAmount, number> = {
+  300: 160,
+  500: 283,
+  1000: 550,
+  2000: 1000,
+};
 
 function formatMoney(value: number) {
   return `${Math.abs(value).toLocaleString("ru-RU")} ₽`;
@@ -278,6 +308,9 @@ export default function App() {
   const [depositLoading, setDepositLoading] =
     useState(false);
 
+  const [starsLoading, setStarsLoading] =
+    useState(false);
+
   const [depositError, setDepositError] =
     useState<string | null>(null);
 
@@ -291,6 +324,9 @@ export default function App() {
       plans[1]
     );
   }, [selectedPlanId]);
+
+  const paymentLoading =
+    depositLoading || starsLoading;
 
   const subscriptionActive =
     subscriptionEnd !== null &&
@@ -595,7 +631,7 @@ export default function App() {
   async function createCryptoInvoice() {
     const initData = requireTelegram();
 
-    if (!initData || depositLoading) {
+    if (!initData || paymentLoading) {
       return;
     }
 
@@ -662,6 +698,155 @@ export default function App() {
       setDepositError(message);
     } finally {
       setDepositLoading(false);
+    }
+  }
+
+  async function refreshProfileFromServer(
+    initData: string,
+  ) {
+    const response = await fetch("/api/me", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ initData }),
+    });
+
+    const contentType =
+      response.headers.get("content-type") ?? "";
+
+    if (!contentType.includes("application/json")) {
+      return;
+    }
+
+    const result =
+      (await response.json()) as MeApiResponse;
+
+    if (!response.ok || result.ok === false) {
+      return;
+    }
+
+    setTelegramUser(result.user);
+    setBalance(result.user.balance);
+    setSubscriptionEnd(
+      parseSubscriptionDate(result.user.subscriptionEnd),
+    );
+    setActivePlanTitle(
+      result.user.activePlanTitle ?? "",
+    );
+    setSetupStatus(result.user.setupStatus);
+  }
+
+  async function refreshAfterStarsPayment(
+    initData: string,
+  ) {
+    for (const delay of [1200, 2500, 5000]) {
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, delay);
+      });
+
+      try {
+        await refreshProfileFromServer(initData);
+      } catch {
+        // Следующая попытка обновит баланс.
+      }
+    }
+  }
+
+  async function createStarsInvoice() {
+    const initData = requireTelegram();
+
+    if (!initData || paymentLoading) {
+      return;
+    }
+
+    const telegramApp = window.Telegram?.WebApp;
+
+    if (!telegramApp?.openInvoice) {
+      setDepositError(
+        "Обновите Telegram: эта версия не поддерживает оплату Stars.",
+      );
+      return;
+    }
+
+    try {
+      setStarsLoading(true);
+      setDepositError(null);
+
+      const response = await fetch(
+        "/api/create-stars-invoice",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            initData,
+            amount: selectedDepositAmount,
+          }),
+        },
+      );
+
+      const contentType =
+        response.headers.get("content-type") ?? "";
+
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          `Сервер вернул ошибку ${response.status}`,
+        );
+      }
+
+      const result =
+        (await response.json()) as CreateStarsInvoiceApiResponse;
+
+      if (result.ok === false) {
+        throw new Error(result.error);
+      }
+
+      if (!response.ok || !result.invoice.url) {
+        throw new Error(
+          `Не удалось создать счёт: ${response.status}`,
+        );
+      }
+
+      telegramApp.openInvoice(
+        result.invoice.url,
+        (status) => {
+          setStarsLoading(false);
+
+          if (status === "paid" || status === "pending") {
+            setTransactions((currentTransactions) => [
+              {
+                id: Date.now(),
+                title: "Пополнение через Telegram Stars",
+                amount: result.invoice.amount,
+                date: formatDateTime(new Date()),
+                type: "deposit",
+                status: "pending",
+              },
+              ...currentTransactions,
+            ]);
+
+            setShowDepositModal(false);
+            void refreshAfterStarsPayment(initData);
+            return;
+          }
+
+          if (status === "failed") {
+            setDepositError(
+              "Telegram не смог завершить платёж. Попробуйте ещё раз.",
+            );
+          }
+        },
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Не удалось создать счёт Telegram Stars";
+
+      setStarsLoading(false);
+      setDepositError(message);
     }
   }
 
@@ -1769,7 +1954,7 @@ export default function App() {
         <div
           className="modalOverlay"
           onClick={() => {
-            if (!depositLoading) {
+            if (!paymentLoading) {
               setShowDepositModal(false);
             }
           }}
@@ -1790,7 +1975,7 @@ export default function App() {
 
               <button
                 type="button"
-                disabled={depositLoading}
+                disabled={paymentLoading}
                 onClick={() =>
                   setShowDepositModal(false)
                 }
@@ -1800,8 +1985,7 @@ export default function App() {
             </div>
 
             <p>
-              Выберите сумму, затем перейдите к оплате
-              через Crypto Bot.
+              Выберите сумму и удобный способ оплаты.
             </p>
 
             <div className="depositGrid">
@@ -1815,7 +1999,7 @@ export default function App() {
                     }
                     type="button"
                     key={amount}
-                    disabled={depositLoading}
+                    disabled={paymentLoading}
                     onClick={() => {
                       setSelectedDepositAmount(amount);
                       setDepositError(null);
@@ -1843,16 +2027,43 @@ export default function App() {
               )}
 
               <button
+                className="starsPaymentButton"
+                type="button"
+                disabled={paymentLoading}
+                onClick={createStarsInvoice}
+              >
+                <span className="starsPaymentIcon">★</span>
+
+                <span className="paymentMethodText">
+                  <strong>
+                    {starsLoading
+                      ? "Создаём счёт..."
+                      : `Оплатить ${
+                          starsByDepositAmount[
+                            selectedDepositAmount
+                          ]
+                        } Stars`}
+                  </strong>
+
+                  <small>
+                    Встроенная оплата Telegram
+                  </small>
+                </span>
+
+                <b>›</b>
+              </button>
+
+              <button
                 className="cryptoBotPaymentButton"
                 type="button"
-                disabled={depositLoading}
+                disabled={paymentLoading}
                 onClick={createCryptoInvoice}
               >
                 <span className="cryptoBotIcon">◇</span>
 
                 <span className="paymentMethodText">
                   <strong>
-                    {depositLoading
+                    {paymentLoading
                       ? "Создаём счёт..."
                       : "Оплатить через Crypto Bot"}
                   </strong>
@@ -1867,7 +2078,7 @@ export default function App() {
 
               <p className="paymentHint">
                 Баланс будет начислен автоматически после
-                подтверждения платежа.
+                подтверждения платежа Telegram.
               </p>
             </div>
           </section>
