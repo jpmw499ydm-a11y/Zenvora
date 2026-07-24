@@ -1,4 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import "./App.css";
 
 type Page = "home" | "subscription" | "wallet" | "profile";
@@ -33,6 +37,82 @@ type Transaction = {
   type: TransactionType;
   status: TransactionStatus;
 };
+
+type ApiUser = {
+  telegramId: number;
+  username: string | null;
+  firstName: string;
+  lastName: string | null;
+  photoUrl: string | null;
+  balance: number;
+  subscriptionEnd: string | null;
+  activePlanTitle: string | null;
+  setupStatus: SetupStatus;
+};
+
+type MeApiResponse =
+  | {
+      ok: true;
+      user: ApiUser;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+type TelegramWebApp = {
+  initData: string;
+  ready: () => void;
+  expand: () => void;
+  openLink?: (url: string) => void;
+};
+
+declare global {
+  interface Window {
+    Telegram?: {
+      WebApp?: TelegramWebApp;
+    };
+  }
+}
+
+let telegramSdkPromise: Promise<TelegramWebApp | null> | null =
+  null;
+
+function loadTelegramSdk(): Promise<TelegramWebApp | null> {
+  if (window.Telegram?.WebApp) {
+    return Promise.resolve(window.Telegram.WebApp);
+  }
+
+  if (telegramSdkPromise) {
+    return telegramSdkPromise;
+  }
+
+  telegramSdkPromise = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+
+    script.src =
+      "https://telegram.org/js/telegram-web-app.js?59";
+    script.async = true;
+    script.dataset.telegramWebAppSdk = "true";
+
+    script.onload = () => {
+      resolve(window.Telegram?.WebApp ?? null);
+    };
+
+    script.onerror = () => {
+      telegramSdkPromise = null;
+      reject(
+        new Error(
+          "Не удалось загрузить Telegram Mini Apps SDK",
+        ),
+      );
+    };
+
+    document.head.appendChild(script);
+  });
+
+  return telegramSdkPromise;
+}
 
 const plans: Plan[] = [
   {
@@ -102,18 +182,22 @@ function calculateDaysLeft(date: Date | null) {
   );
 }
 
+function parseSubscriptionDate(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
 export default function App() {
   const [page, setPage] = useState<Page>("home");
   const [selectedPlanId, setSelectedPlanId] =
     useState<PlanId>("3");
 
-  /*
-    Тестовый баланс.
-
-    Позже баланс будет загружаться с сервера.
-    Для проверки подписки оставляем 2500 ₽.
-  */
-  const [balance, setBalance] = useState(2500);
+  const [balance, setBalance] = useState(0);
 
   const [subscriptionEnd, setSubscriptionEnd] =
     useState<Date | null>(null);
@@ -123,6 +207,15 @@ export default function App() {
 
   const [setupStatus, setSetupStatus] =
     useState<SetupStatus>("not-started");
+
+  const [telegramUser, setTelegramUser] =
+    useState<ApiUser | null>(null);
+
+  const [profileLoading, setProfileLoading] =
+    useState(true);
+
+  const [profileError, setProfileError] =
+    useState<string | null>(null);
 
   const [showDepositModal, setShowDepositModal] =
     useState(false);
@@ -155,6 +248,126 @@ export default function App() {
       transaction.type === "deposit" &&
       transaction.status === "pending",
   );
+
+  const profileName = telegramUser
+    ? [telegramUser.firstName, telegramUser.lastName]
+        .filter(Boolean)
+        .join(" ")
+    : "Пользователь";
+
+  const profileInitial =
+    telegramUser?.firstName.trim().charAt(0).toUpperCase() ||
+    "Z";
+
+  const profileSubtitle = telegramUser
+    ? telegramUser.username
+      ? `@${telegramUser.username} · ID: ${telegramUser.telegramId}`
+      : `Telegram ID: ${telegramUser.telegramId}`
+    : profileLoading
+      ? "Загружаем данные Telegram..."
+      : "Откройте приложение через Telegram-бота";
+
+  const avatarStyle = telegramUser?.photoUrl
+    ? {
+        backgroundImage: `url(${JSON.stringify(
+          telegramUser.photoUrl,
+        )})`,
+        backgroundPosition: "center",
+        backgroundRepeat: "no-repeat",
+        backgroundSize: "cover",
+      }
+    : undefined;
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadTelegramProfile() {
+      try {
+        setProfileLoading(true);
+        setProfileError(null);
+
+        const telegramApp = await loadTelegramSdk();
+
+        telegramApp?.ready();
+        telegramApp?.expand();
+
+        const initData = telegramApp?.initData ?? "";
+
+        if (!initData) {
+          throw new Error(
+            "Откройте Zenvora через кнопку Mini App в Telegram-боте.",
+          );
+        }
+
+        const response = await fetch("/api/me", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            initData,
+          }),
+          signal: controller.signal,
+        });
+
+        const contentType =
+          response.headers.get("content-type") ?? "";
+
+        if (!contentType.includes("application/json")) {
+          throw new Error(
+            `Сервер вернул ошибку ${response.status}`,
+          );
+        }
+
+        const result = (await response.json()) as MeApiResponse;
+
+        if (!response.ok || !result.ok) {
+          const message =
+            result.ok === false
+              ? result.error
+              : "Не удалось загрузить профиль";
+
+          throw new Error(message);
+        }
+
+        setTelegramUser(result.user);
+        setBalance(result.user.balance);
+        setSubscriptionEnd(
+          parseSubscriptionDate(
+            result.user.subscriptionEnd,
+          ),
+        );
+        setActivePlanTitle(
+          result.user.activePlanTitle ?? "",
+        );
+        setSetupStatus(result.user.setupStatus);
+      } catch (error) {
+        if (
+          error instanceof DOMException &&
+          error.name === "AbortError"
+        ) {
+          return;
+        }
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Не удалось загрузить профиль";
+
+        setProfileError(message);
+      } finally {
+        if (!controller.signal.aborted) {
+          setProfileLoading(false);
+        }
+      }
+    }
+
+    void loadTelegramProfile();
+
+    return () => {
+      controller.abort();
+    };
+  }, []);
 
   useEffect(() => {
     window.scrollTo({
@@ -226,6 +439,13 @@ export default function App() {
   }
 
   function openExternalLink(url: string) {
+    const telegramApp = window.Telegram?.WebApp;
+
+    if (telegramApp?.openLink) {
+      telegramApp.openLink(url);
+      return;
+    }
+
     window.open(url, "_blank", "noopener,noreferrer");
   }
 
@@ -645,13 +865,37 @@ export default function App() {
           <button
             className="avatarButton"
             type="button"
+            style={avatarStyle}
             onClick={() => changePage("profile")}
+            aria-label="Открыть профиль"
           >
-            D
+            {!telegramUser?.photoUrl && profileInitial}
           </button>
         </header>
 
         <div className="pageContent">
+          {profileLoading && (
+            <section className="walletPendingCard">
+              <div className="pendingSpinner" />
+
+              <div>
+                <strong>Загружаем профиль</strong>
+                <p>Проверяем данные Telegram и подключение.</p>
+              </div>
+            </section>
+          )}
+
+          {profileError && (
+            <section className="walletPendingCard">
+              <span className="instructionIcon">!</span>
+
+              <div>
+                <strong>Профиль не загружен</strong>
+                <p>{profileError}</p>
+              </div>
+            </section>
+          )}
+
           {page === "home" && (
             <section className="page homePage">
               {renderHome()}
@@ -892,14 +1136,17 @@ export default function App() {
               </div>
 
               <section className="profileCard">
-                <div className="profileAvatar">D</div>
+                <div
+                  className="profileAvatar"
+                  style={avatarStyle}
+                >
+                  {!telegramUser?.photoUrl && profileInitial}
+                </div>
 
                 <div className="profileName">
-                  <strong>Даниил</strong>
+                  <strong>{profileName}</strong>
 
-                  <span>
-                    Telegram ID загрузится автоматически
-                  </span>
+                  <span>{profileSubtitle}</span>
                 </div>
 
                 <small
