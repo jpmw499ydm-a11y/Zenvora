@@ -121,6 +121,8 @@ type CreateStarsInvoiceApiResponse =
         amount: DepositAmount;
         stars: number;
         url: string;
+        externalId: string;
+        status: "pending";
       };
     }
   | {
@@ -511,6 +513,78 @@ export default function App() {
     });
   }, [page]);
 
+  useEffect(() => {
+    if (
+      !telegramInitData ||
+      pendingPayments.length === 0
+    ) {
+      return;
+    }
+
+    let stopped = false;
+
+    async function refreshPendingPayments() {
+      if (
+        stopped ||
+        document.visibilityState !== "visible"
+      ) {
+        return;
+      }
+
+      try {
+        await refreshProfileFromServer(
+          telegramInitData,
+        );
+      } catch {
+        // Следующая проверка повторит запрос.
+      }
+    }
+
+    const intervalId = window.setInterval(() => {
+      void refreshPendingPayments();
+    }, 5000);
+
+    function handleVisibilityChange() {
+      if (document.visibilityState === "visible") {
+        void refreshPendingPayments();
+      }
+    }
+
+    function handleWindowFocus() {
+      void refreshPendingPayments();
+    }
+
+    document.addEventListener(
+      "visibilitychange",
+      handleVisibilityChange,
+    );
+
+    window.addEventListener(
+      "focus",
+      handleWindowFocus,
+    );
+
+    void refreshPendingPayments();
+
+    return () => {
+      stopped = true;
+      window.clearInterval(intervalId);
+
+      document.removeEventListener(
+        "visibilitychange",
+        handleVisibilityChange,
+      );
+
+      window.removeEventListener(
+        "focus",
+        handleWindowFocus,
+      );
+    };
+  }, [
+    telegramInitData,
+    pendingPayments.length,
+  ]);
+
   function changePage(nextPage: Page) {
     setPage(nextPage);
     setPurchaseError(null);
@@ -651,6 +725,7 @@ export default function App() {
         ...currentTransactions,
       ]);
 
+      void refreshProfileFromServer(initData);
       setShowSuccessModal(true);
     } catch (error) {
       const message =
@@ -776,6 +851,54 @@ export default function App() {
     );
   }
 
+  async function declinePayment(
+    initData: string,
+    provider: "telegram_stars" | "crypto_bot",
+    externalId: string,
+  ) {
+    const response = await fetch(
+      "/api/decline-payment",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          initData,
+          provider,
+          externalId,
+        }),
+      },
+    );
+
+    const contentType =
+      response.headers.get("content-type") ?? "";
+
+    if (!contentType.includes("application/json")) {
+      throw new Error(
+        `Сервер вернул ошибку ${response.status}`,
+      );
+    }
+
+    const result = (await response.json()) as
+      | {
+          ok: true;
+          result: unknown;
+        }
+      | {
+          ok: false;
+          error: string;
+        };
+
+    if (!response.ok || result.ok === false) {
+      throw new Error(
+        result.ok === false
+          ? result.error
+          : "Не удалось обновить статус платежа",
+      );
+    }
+  }
+
   async function refreshAfterStarsPayment(
     initData: string,
   ) {
@@ -848,33 +971,68 @@ export default function App() {
         );
       }
 
+      setTransactions((currentTransactions) => {
+        const withoutDuplicate =
+          currentTransactions.filter(
+            (transaction) =>
+              transaction.id !==
+              `stars:${result.invoice.externalId}`,
+          );
+
+        return [
+          {
+            id: `stars:${result.invoice.externalId}`,
+            title: "Пополнение через Telegram Stars",
+            amount: result.invoice.amount,
+            date: formatDateTime(new Date()),
+            type: "deposit",
+            status: "pending",
+          },
+          ...withoutDuplicate,
+        ];
+      });
+
       telegramApp.openInvoice(
         result.invoice.url,
         (status) => {
           setStarsLoading(false);
+          setShowDepositModal(false);
 
           if (status === "paid" || status === "pending") {
-            setTransactions((currentTransactions) => [
-              {
-                id: `stars-local:${Date.now()}`,
-                title: "Пополнение через Telegram Stars",
-                amount: result.invoice.amount,
-                date: formatDateTime(new Date()),
-                type: "deposit",
-                status: "pending",
-              },
-              ...currentTransactions,
-            ]);
-
-            setShowDepositModal(false);
             void refreshAfterStarsPayment(initData);
             return;
           }
 
-          if (status === "failed") {
-            setDepositError(
-              "Telegram не смог завершить платёж. Попробуйте ещё раз.",
-            );
+          if (
+            status === "cancelled" ||
+            status === "failed"
+          ) {
+            void (async () => {
+              try {
+                await declinePayment(
+                  initData,
+                  "telegram_stars",
+                  result.invoice.externalId,
+                );
+
+                await refreshProfileFromServer(
+                  initData,
+                );
+              } catch (error) {
+                const message =
+                  error instanceof Error
+                    ? error.message
+                    : "Не удалось обновить статус платежа";
+
+                setDepositError(message);
+              }
+            })();
+
+            if (status === "failed") {
+              setDepositError(
+                "Telegram не смог завершить платёж. Попробуйте ещё раз.",
+              );
+            }
           }
         },
       );
