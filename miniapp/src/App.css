@@ -1908,6 +1908,169 @@ button:active {
   background: rgba(77, 111, 225, 0.16);
 }
 
+.depositGrid button:disabled,
+.modalHeader > button:disabled,
+.cryptoBotPaymentButton:disabled {
+  cursor: default;
+  opacity: 0.62;
+}
+
+.depositGrid .depositAmountSelected {
+  border-color: rgba(126, 158, 255, 0.58);
+  color: #ffffff;
+  background:
+    linear-gradient(
+      145deg,
+      rgba(77, 117, 239, 0.34),
+      rgba(103, 73, 213, 0.2)
+    );
+  box-shadow:
+    0 12px 28px rgba(58, 78, 190, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.paymentMethodSection {
+  display: grid;
+  gap: 11px;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.selectedDepositSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px 14px;
+  border: 1px solid rgba(103, 139, 255, 0.13);
+  border-radius: 15px;
+  background: rgba(48, 75, 143, 0.055);
+}
+
+.selectedDepositSummary span {
+  color: #748199;
+  font-size: 8px;
+}
+
+.selectedDepositSummary strong {
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.cryptoBotPaymentButton {
+  display: grid;
+  width: 100%;
+  min-height: 66px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid rgba(72, 173, 255, 0.28);
+  border-radius: 18px;
+  color: #ffffff;
+  background:
+    radial-gradient(
+      circle at 90% 0%,
+      rgba(79, 181, 255, 0.2),
+      transparent 38%
+    ),
+    linear-gradient(
+      145deg,
+      rgba(37, 126, 211, 0.2),
+      rgba(34, 78, 151, 0.12)
+    );
+  box-shadow:
+    0 14px 34px rgba(22, 78, 151, 0.17),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  text-align: left;
+}
+
+.cryptoBotIcon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(130, 210, 255, 0.25);
+  border-radius: 14px;
+  color: #ffffff;
+  background:
+    linear-gradient(
+      145deg,
+      #2bafff,
+      #3378e8
+    );
+  box-shadow:
+    0 9px 24px rgba(40, 145, 236, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  font-size: 22px;
+  font-weight: 900;
+}
+
+.paymentMethodText {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.paymentMethodText strong {
+  font-size: 12px;
+}
+
+.paymentMethodText small {
+  overflow: hidden;
+  color: #86a8cc;
+  font-size: 8px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cryptoBotPaymentButton > b {
+  color: #9dccff;
+  font-size: 24px;
+  font-weight: 500;
+}
+
+.depositError {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 12px;
+  border: 1px solid rgba(239, 108, 122, 0.19);
+  border-radius: 14px;
+  background: rgba(214, 67, 83, 0.07);
+}
+
+.depositError span {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 50%;
+  color: #ffb0b8;
+  background: rgba(223, 76, 91, 0.13);
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.depositError p {
+  margin: 1px 0 0;
+  color: #d8959d;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.paymentHint {
+  margin: 0;
+  color: #68758c;
+  font-size: 8px;
+  line-height: 1.5;
+  text-align: center;
+}
+
 .centeredModal {
   align-items: center;
   padding:
@@ -2161,4 +2324,3 @@ button:active {
     transition-duration: 0.01ms !important;
   }
 }
-/* force deploy 2 */
