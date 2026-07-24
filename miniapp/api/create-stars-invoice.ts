@@ -253,6 +253,52 @@ async function ensureTelegramWebhook(
   );
 }
 
+async function savePendingTransaction(
+  telegramId: number,
+  externalId: string,
+  amount: DepositAmount,
+  stars: number,
+) {
+  const supabaseUrl = getEnvironmentVariable(
+    "SUPABASE_URL",
+  );
+  const secretKey = getEnvironmentVariable(
+    "SUPABASE_SECRET_KEY",
+  );
+
+  const response = await fetch(
+    `${supabaseUrl}/rest/v1/rpc/upsert_account_transaction`,
+    {
+      method: "POST",
+      headers: {
+        apikey: secretKey,
+        Authorization: `Bearer ${secretKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        p_telegram_id: telegramId,
+        p_kind: "deposit",
+        p_provider: "telegram_stars",
+        p_title: "Пополнение через Telegram Stars",
+        p_amount_rub: amount,
+        p_status: "pending",
+        p_external_id: externalId,
+        p_metadata: {
+          stars,
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Не удалось сохранить операцию: ${errorText}`,
+    );
+  }
+}
+
 export default {
   async fetch(request: Request): Promise<Response> {
     if (request.method !== "POST") {
@@ -321,8 +367,11 @@ export default {
       await ensureTelegramWebhook(request, botToken);
 
       const stars = starsByDepositAmount[body.amount];
+      const externalId = crypto.randomUUID();
+
       const payload = JSON.stringify({
         v: 1,
+        i: externalId,
         t: telegramUser.id,
         r: body.amount,
         s: stars,
@@ -349,12 +398,21 @@ export default {
         },
       );
 
+      await savePendingTransaction(
+        telegramUser.id,
+        externalId,
+        body.amount,
+        stars,
+      );
+
       return sendJson({
         ok: true,
         invoice: {
           amount: body.amount,
           stars,
           url: invoiceUrl,
+          externalId,
+          status: "pending",
         },
       });
     } catch (error) {
