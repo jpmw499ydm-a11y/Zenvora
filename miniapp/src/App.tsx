@@ -9,7 +9,10 @@ type Page = "home" | "subscription" | "wallet" | "profile";
 
 type PlanId = "1" | "3" | "12";
 
-type TransactionStatus = "pending" | "confirmed" | "declined";
+type TransactionStatus =
+  | "pending"
+  | "confirmed"
+  | "declined";
 
 type TransactionType = "deposit" | "subscription";
 
@@ -90,8 +93,9 @@ declare global {
   }
 }
 
-let telegramSdkPromise: Promise<TelegramWebApp | null> | null =
-  null;
+let telegramSdkPromise:
+  | Promise<TelegramWebApp | null>
+  | null = null;
 
 function loadTelegramSdk(): Promise<TelegramWebApp | null> {
   if (window.Telegram?.WebApp) {
@@ -107,6 +111,7 @@ function loadTelegramSdk(): Promise<TelegramWebApp | null> {
 
     script.src =
       "https://telegram.org/js/telegram-web-app.js?59";
+
     script.async = true;
     script.dataset.telegramWebAppSdk = "true";
 
@@ -116,6 +121,7 @@ function loadTelegramSdk(): Promise<TelegramWebApp | null> {
 
     script.onerror = () => {
       telegramSdkPromise = null;
+
       reject(
         new Error(
           "Не удалось загрузить Telegram Mini Apps SDK",
@@ -178,12 +184,6 @@ function formatDateTime(date: Date) {
   }).format(date);
 }
 
-function addMonths(date: Date, months: number) {
-  const result = new Date(date);
-  result.setMonth(result.getMonth() + months);
-  return result;
-}
-
 function calculateDaysLeft(date: Date | null) {
   if (!date) {
     return 0;
@@ -209,6 +209,7 @@ function parseSubscriptionDate(value: string | null) {
 
 export default function App() {
   const [page, setPage] = useState<Page>("home");
+
   const [selectedPlanId, setSelectedPlanId] =
     useState<PlanId>("3");
 
@@ -218,7 +219,7 @@ export default function App() {
     useState<Date | null>(null);
 
   const [activePlanTitle, setActivePlanTitle] =
-    useState<string>("");
+    useState("");
 
   const [setupStatus, setSetupStatus] =
     useState<SetupStatus>("not-started");
@@ -226,10 +227,19 @@ export default function App() {
   const [telegramUser, setTelegramUser] =
     useState<ApiUser | null>(null);
 
+  const [telegramInitData, setTelegramInitData] =
+    useState("");
+
   const [profileLoading, setProfileLoading] =
     useState(true);
 
   const [profileError, setProfileError] =
+    useState<string | null>(null);
+
+  const [purchaseLoading, setPurchaseLoading] =
+    useState(false);
+
+  const [purchaseError, setPurchaseError] =
     useState<string | null>(null);
 
   const [showDepositModal, setShowDepositModal] =
@@ -242,16 +252,7 @@ export default function App() {
     useState(false);
 
   const [showTelegramModal, setShowTelegramModal] =
-  useState(false);
-
-const [telegramInitData, setTelegramInitData] =
-  useState("");
-
-const [purchaseLoading, setPurchaseLoading] =
-  useState(false);
-
-const [purchaseError, setPurchaseError] =
-  useState<string | null>(null);
+    useState(false);
 
   const [transactions, setTransactions] = useState<
     Transaction[]
@@ -283,8 +284,10 @@ const [purchaseError, setPurchaseError] =
     : "Пользователь";
 
   const profileInitial =
-    telegramUser?.firstName.trim().charAt(0).toUpperCase() ||
-    "Z";
+    telegramUser?.firstName
+      .trim()
+      .charAt(0)
+      .toUpperCase() || "Z";
 
   const profileSubtitle = telegramUser
     ? telegramUser.username
@@ -318,11 +321,11 @@ const [purchaseError, setPurchaseError] =
         telegramApp?.ready();
         telegramApp?.expand();
 
-       const initData = telegramApp?.initData ?? "";
+        const initData = telegramApp?.initData ?? "";
 
-setTelegramInitData(initData);
+        setTelegramInitData(initData);
 
-if (!initData) {
+        if (!initData) {
           throw new Error(
             "Откройте Zenvora через кнопку Mini App в Telegram-боте.",
           );
@@ -348,9 +351,10 @@ if (!initData) {
           );
         }
 
-        const result = (await response.json()) as MeApiResponse;
+        const result =
+          (await response.json()) as MeApiResponse;
 
-        if (!response.ok || !result.ok) {
+        if (!response.ok || result.ok === false) {
           const message =
             result.ok === false
               ? result.error
@@ -361,14 +365,17 @@ if (!initData) {
 
         setTelegramUser(result.user);
         setBalance(result.user.balance);
+
         setSubscriptionEnd(
           parseSubscriptionDate(
             result.user.subscriptionEnd,
           ),
         );
+
         setActivePlanTitle(
           result.user.activePlanTitle ?? "",
         );
+
         setSetupStatus(result.user.setupStatus);
       } catch (error) {
         if (
@@ -407,169 +414,163 @@ if (!initData) {
 
   function changePage(nextPage: Page) {
     setPage(nextPage);
+    setPurchaseError(null);
   }
 
-  function buySubscription() {
+  function requireTelegram() {
+    const currentInitData =
+      telegramInitData ||
+      window.Telegram?.WebApp?.initData ||
+      "";
+
+    if (currentInitData) {
+      if (!telegramInitData) {
+        setTelegramInitData(currentInitData);
+      }
+
+      return currentInitData;
+    }
+
+    setShowDepositModal(false);
+    setShowBalanceModal(false);
+    setShowTelegramModal(true);
+
+    return null;
+  }
+
+  function openDepositModal() {
+    const initData = requireTelegram();
+
+    if (!initData) {
+      return;
+    }
+
+    setShowDepositModal(true);
+  }
+
+  async function buySubscription() {
+    const initData = requireTelegram();
+
+    if (!initData || purchaseLoading) {
+      return;
+    }
+
+    if (profileLoading) {
+      setPurchaseError(
+        "Дождитесь окончания загрузки профиля.",
+      );
+
+      return;
+    }
+
     if (balance < selectedPlan.price) {
       setShowBalanceModal(true);
       return;
     }
 
-    const currentDate = new Date();
+    try {
+      setPurchaseLoading(true);
+      setPurchaseError(null);
 
-    const startDate =
-      subscriptionEnd &&
-      subscriptionEnd.getTime() > currentDate.getTime()
-        ? subscriptionEnd
-        : currentDate;
-
-    const newSubscriptionEnd = addMonths(
-      startDate,
-      selectedPlan.months,
-    );
-
-    setBalance((currentBalance) => {
-      return currentBalance - selectedPlan.price;
-    });
-
-    setSubscriptionEnd(newSubscriptionEnd);
-    setActivePlanTitle(selectedPlan.title);
-    setSetupStatus("not-started");
-
-    setTransactions((currentTransactions) => [
-      {
-        id: Date.now(),
-        title: `Подписка на ${selectedPlan.title}`,
-        amount: -selectedPlan.price,
-        date: formatDateTime(new Date()),
-        type: "subscription",
-        status: "confirmed",
-      },
-      ...currentTransactions,
-    ]);
-
-    setShowSuccessModal(true);
-  }
-
-  function requireTelegram() {
-  if (telegramInitData) {
-    return true;
-  }
-
-  setShowDepositModal(false);
-  setShowBalanceModal(false);
-  setShowTelegramModal(true);
-
-  return false;
-}
-
-function openDepositModal() {
-  if (!requireTelegram()) {
-    return;
-  }
-
-  setShowDepositModal(true);
-}
-
-async function buySubscription() {
-  if (!requireTelegram()) {
-    return;
-  }
-
-  if (purchaseLoading) {
-    return;
-  }
-
-  if (balance < selectedPlan.price) {
-    setShowBalanceModal(true);
-    return;
-  }
-
-  try {
-    setPurchaseLoading(true);
-    setPurchaseError(null);
-
-    const response = await fetch("/api/buy-subscription", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        initData: telegramInitData,
-        planId: selectedPlan.id,
-      }),
-    });
-
-    const contentType =
-      response.headers.get("content-type") ?? "";
-
-    if (!contentType.includes("application/json")) {
-      throw new Error(
-        `Сервер вернул ошибку ${response.status}`,
+      const response = await fetch(
+        "/api/buy-subscription",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            initData,
+            planId: selectedPlan.id,
+          }),
+        },
       );
-    }
 
-    const result =
-      (await response.json()) as BuySubscriptionApiResponse;
+      const contentType =
+        response.headers.get("content-type") ?? "";
 
-    if (!response.ok || !result.ok) {
-      const message =
-        result.ok === false
-          ? result.error
-          : "Не удалось оформить подписку";
-
-      if (
-        response.status === 409 ||
-        message === "Недостаточно средств"
-      ) {
-        setShowBalanceModal(true);
-        return;
+      if (!contentType.includes("application/json")) {
+        throw new Error(
+          `Сервер вернул ошибку ${response.status}`,
+        );
       }
 
-      throw new Error(message);
-    }
+      const result =
+        (await response.json()) as BuySubscriptionApiResponse;
 
-    const newSubscriptionEnd = parseSubscriptionDate(
-      result.subscription.subscriptionEnd,
-    );
+      if (result.ok === false) {
+        if (
+          response.status === 409 ||
+          result.error === "Недостаточно средств"
+        ) {
+          setShowBalanceModal(true);
+          return;
+        }
 
-    if (!newSubscriptionEnd) {
-      throw new Error(
-        "Сервер вернул неправильную дату подписки",
+        throw new Error(result.error);
+      }
+
+      if (!response.ok) {
+        throw new Error(
+          `Сервер вернул ошибку ${response.status}`,
+        );
+      }
+
+      const newSubscriptionEnd =
+        parseSubscriptionDate(
+          result.subscription.subscriptionEnd,
+        );
+
+      if (!newSubscriptionEnd) {
+        throw new Error(
+          "Сервер вернул неправильную дату подписки",
+        );
+      }
+
+      setBalance(result.subscription.balance);
+
+      setSubscriptionEnd(newSubscriptionEnd);
+
+      setActivePlanTitle(
+        result.subscription.activePlanTitle,
       );
+
+      setSetupStatus(
+        result.subscription.setupStatus,
+      );
+
+      setTransactions((currentTransactions) => [
+        {
+          id: Date.now(),
+          title: `Подписка на ${selectedPlan.title}`,
+          amount: -selectedPlan.price,
+          date: formatDateTime(new Date()),
+          type: "subscription",
+          status: "confirmed",
+        },
+        ...currentTransactions,
+      ]);
+
+      setShowSuccessModal(true);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Не удалось оформить подписку";
+
+      setPurchaseError(message);
+    } finally {
+      setPurchaseLoading(false);
+    }
+  }
+
+  function createDeposit(amount: number) {
+    const initData = requireTelegram();
+
+    if (!initData) {
+      return;
     }
 
-    setBalance(result.subscription.balance);
-    setSubscriptionEnd(newSubscriptionEnd);
-    setActivePlanTitle(
-      result.subscription.activePlanTitle,
-    );
-    setSetupStatus(result.subscription.setupStatus);
-
-    setTransactions((currentTransactions) => [
-      {
-        id: Date.now(),
-        title: `Подписка на ${selectedPlan.title}`,
-        amount: -selectedPlan.price,
-        date: formatDateTime(new Date()),
-        type: "subscription",
-        status: "confirmed",
-      },
-      ...currentTransactions,
-    ]);
-
-    setShowSuccessModal(true);
-  } catch (error) {
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Не удалось оформить подписку";
-
-    setPurchaseError(message);
-  } finally {
-    setPurchaseLoading(false);
-  }
-}
     setTransactions((currentTransactions) => [
       {
         id: Date.now(),
@@ -593,25 +594,37 @@ async function buySubscription() {
       return;
     }
 
-    window.open(url, "_blank", "noopener,noreferrer");
+    window.open(
+      url,
+      "_blank",
+      "noopener,noreferrer",
+    );
   }
 
   function openIphoneApp() {
-    openExternalLink("https://example.com/iphone");
+    openExternalLink(
+      "https://example.com/iphone",
+    );
   }
 
   function openAndroidApp() {
-    openExternalLink("https://example.com/android");
+    openExternalLink(
+      "https://example.com/android",
+    );
   }
 
   function openInstruction() {
-    openExternalLink("https://example.com/instruction");
+    openExternalLink(
+      "https://example.com/instruction",
+    );
   }
 
   function installVpn() {
     setSetupStatus("config-opened");
 
-    openExternalLink("https://example.com/vpn-config");
+    openExternalLink(
+      "https://example.com/vpn-config",
+    );
   }
 
   function checkConnection() {
@@ -650,14 +663,16 @@ async function buySubscription() {
           </h1>
 
           <p>
-            Высокая скорость, защита данных и доступ к нужным
-            сервисам без лишних настроек.
+            Высокая скорость, защита данных и доступ к
+            нужным сервисам без лишних настроек.
           </p>
 
           <button
             className="primaryButton"
             type="button"
-            onClick={() => changePage("subscription")}
+            onClick={() =>
+              changePage("subscription")
+            }
           >
             Оформить подписку
             <span>›</span>
@@ -670,7 +685,9 @@ async function buySubscription() {
 
             <div>
               <strong>Высокая скорость</strong>
-              <p>Стабильное соединение без ограничений</p>
+              <p>
+                Стабильное соединение без ограничений
+              </p>
             </div>
           </article>
 
@@ -679,7 +696,9 @@ async function buySubscription() {
 
             <div>
               <strong>Защита данных</strong>
-              <p>Безопасное использование любых сетей</p>
+              <p>
+                Безопасное использование любых сетей
+              </p>
             </div>
           </article>
 
@@ -688,7 +707,9 @@ async function buySubscription() {
 
             <div>
               <strong>Доступ к сайтам</strong>
-              <p>Автоматический обход ограничений</p>
+              <p>
+                Автоматический обход ограничений
+              </p>
             </div>
           </article>
         </section>
@@ -703,6 +724,7 @@ async function buySubscription() {
 
             <div>
               <strong>Проверяем платёж</strong>
+
               <p>
                 Баланс обновится автоматически после
                 подтверждения.
@@ -721,7 +743,7 @@ async function buySubscription() {
 
           <button
             type="button"
-            onClick={() => setShowDepositModal(true)}
+            onClick={openDepositModal}
           >
             Пополнить
           </button>
@@ -739,8 +761,8 @@ async function buySubscription() {
           <h1>Настройте VPN</h1>
 
           <p>
-            Выполните три шага, чтобы начать пользоваться
-            Zenvora.
+            Выполните три шага, чтобы начать
+            пользоваться Zenvora.
           </p>
         </div>
 
@@ -749,7 +771,9 @@ async function buySubscription() {
 
           <span
             className={
-              setupStatus !== "not-started" ? "active" : ""
+              setupStatus !== "not-started"
+                ? "active"
+                : ""
             }
           />
 
@@ -773,7 +797,8 @@ async function buySubscription() {
               <h3>Установите приложение</h3>
 
               <p>
-                Выберите приложение для вашего устройства.
+                Выберите приложение для вашего
+                устройства.
               </p>
 
               <div className="appButtons">
@@ -813,7 +838,8 @@ async function buySubscription() {
               <h3>Откройте инструкцию</h3>
 
               <p>
-                Посмотрите пошаговое руководство по установке.
+                Посмотрите пошаговое руководство по
+                установке.
               </p>
 
               <button
@@ -821,11 +847,18 @@ async function buySubscription() {
                 type="button"
                 onClick={openInstruction}
               >
-                <span className="instructionIcon">?</span>
+                <span className="instructionIcon">
+                  ?
+                </span>
 
                 <div>
-                  <strong>Инструкция по установке</strong>
-                  <small>Открыть руководство</small>
+                  <strong>
+                    Инструкция по установке
+                  </strong>
+
+                  <small>
+                    Открыть руководство
+                  </small>
                 </div>
 
                 <b>›</b>
@@ -841,7 +874,9 @@ async function buySubscription() {
             }`}
           >
             <div className="stepNumber">
-              {setupStatus !== "not-started" ? "✓" : "3"}
+              {setupStatus !== "not-started"
+                ? "✓"
+                : "3"}
             </div>
 
             <div className="stepContent">
@@ -850,8 +885,8 @@ async function buySubscription() {
               <h3>Установите VPN</h3>
 
               <p>
-                Откройте персональную конфигурацию и добавьте её
-                в установленное приложение.
+                Откройте персональную конфигурацию и
+                добавьте её в установленное приложение.
               </p>
 
               {setupStatus === "not-started" && (
@@ -871,9 +906,13 @@ async function buySubscription() {
                     <span>✓</span>
 
                     <div>
-                      <strong>Конфигурация открыта</strong>
+                      <strong>
+                        Конфигурация открыта
+                      </strong>
+
                       <p>
-                        Установите её и вернитесь в Zenvora.
+                        Установите её и вернитесь в
+                        Zenvora.
                       </p>
                     </div>
                   </div>
@@ -902,8 +941,13 @@ async function buySubscription() {
                   <div className="checkingSpinner" />
 
                   <div>
-                    <strong>Проверяем подключение</strong>
-                    <p>Это займёт несколько секунд</p>
+                    <strong>
+                      Проверяем подключение
+                    </strong>
+
+                    <p>
+                      Это займёт несколько секунд
+                    </p>
                   </div>
                 </div>
               )}
@@ -938,13 +982,14 @@ async function buySubscription() {
         <h1>Всё готово!</h1>
 
         <p>
-          Zenvora успешно настроена. Желаем приятного и
-          безопасного пользования!
+          Zenvora успешно настроена. Желаем приятного
+          и безопасного пользования!
         </p>
 
         <section className="connectedInfo">
           <div>
             <span>Статус</span>
+
             <strong className="greenText">
               Подключение защищено
             </strong>
@@ -1016,7 +1061,8 @@ async function buySubscription() {
             onClick={() => changePage("profile")}
             aria-label="Открыть профиль"
           >
-            {!telegramUser?.photoUrl && profileInitial}
+            {!telegramUser?.photoUrl &&
+              profileInitial}
           </button>
         </header>
 
@@ -1026,18 +1072,29 @@ async function buySubscription() {
               <div className="pendingSpinner" />
 
               <div>
-                <strong>Загружаем профиль</strong>
-                <p>Проверяем данные Telegram и подключение.</p>
+                <strong>
+                  Загружаем профиль
+                </strong>
+
+                <p>
+                  Проверяем данные Telegram и
+                  подключение.
+                </p>
               </div>
             </section>
           )}
 
           {profileError && (
             <section className="walletPendingCard">
-              <span className="instructionIcon">!</span>
+              <span className="instructionIcon">
+                !
+              </span>
 
               <div>
-                <strong>Профиль не загружен</strong>
+                <strong>
+                  Профиль не загружен
+                </strong>
+
                 <p>{profileError}</p>
               </div>
             </section>
@@ -1055,7 +1112,9 @@ async function buySubscription() {
                 <button
                   className="backButton"
                   type="button"
-                  onClick={() => changePage("home")}
+                  onClick={() =>
+                    changePage("home")
+                  }
                 >
                   ‹
                 </button>
@@ -1074,13 +1133,16 @@ async function buySubscription() {
                   return (
                     <button
                       className={`planCard ${
-                        selected ? "planCardSelected" : ""
+                        selected
+                          ? "planCardSelected"
+                          : ""
                       }`}
                       type="button"
                       key={plan.id}
-                      onClick={() =>
-                        setSelectedPlanId(plan.id)
-                      }
+                      onClick={() => {
+                        setSelectedPlanId(plan.id);
+                        setPurchaseError(null);
+                      }}
                     >
                       <span className="planRadio">
                         {selected ? "✓" : ""}
@@ -1088,7 +1150,9 @@ async function buySubscription() {
 
                       <span className="planContent">
                         <span className="planTitleRow">
-                          <strong>{plan.title}</strong>
+                          <strong>
+                            {plan.title}
+                          </strong>
 
                           {plan.recommended && (
                             <small className="recommendedBadge">
@@ -1097,13 +1161,17 @@ async function buySubscription() {
                           )}
                         </span>
 
-                        <small>{plan.description}</small>
+                        <small>
+                          {plan.description}
+                        </small>
                       </span>
 
                       <span className="planPrice">
                         {plan.oldPrice && (
                           <small>
-                            {formatMoney(plan.oldPrice)}
+                            {formatMoney(
+                              plan.oldPrice,
+                            )}
                           </small>
                         )}
 
@@ -1118,40 +1186,75 @@ async function buySubscription() {
 
               <section className="orderCard">
                 <div>
-                  <span>Выбранный тариф</span>
-                  <strong>{selectedPlan.title}</strong>
+                  <span>
+                    Выбранный тариф
+                  </span>
+
+                  <strong>
+                    {selectedPlan.title}
+                  </strong>
                 </div>
 
                 <div>
                   <span>К оплате</span>
 
                   <strong>
-                    {formatMoney(selectedPlan.price)}
+                    {formatMoney(
+                      selectedPlan.price,
+                    )}
                   </strong>
                 </div>
               </section>
 
               <section className="walletNotice">
                 <div>
-                  <span>Баланс кошелька</span>
-                  <strong>{formatMoney(balance)}</strong>
+                  <span>
+                    Баланс кошелька
+                  </span>
+
+                  <strong>
+                    {formatMoney(balance)}
+                  </strong>
                 </div>
 
-                {balance < selectedPlan.price && (
+                {balance <
+                  selectedPlan.price && (
                   <p>
-                    Недостаточно средств. Пополните баланс перед
-                    оформлением.
+                    Недостаточно средств. Пополните
+                    баланс перед оформлением.
                   </p>
                 )}
               </section>
+
+              {purchaseError && (
+                <section className="walletPendingCard">
+                  <span className="instructionIcon">
+                    !
+                  </span>
+
+                  <div>
+                    <strong>
+                      Не удалось оформить подписку
+                    </strong>
+
+                    <p>{purchaseError}</p>
+                  </div>
+                </section>
+              )}
 
               <button
                 className="primaryButton"
                 type="button"
                 onClick={buySubscription}
+                disabled={purchaseLoading}
+                aria-busy={purchaseLoading}
               >
-                Оформить за{" "}
-                {formatMoney(selectedPlan.price)}
+                {purchaseLoading
+                  ? "Оформляем..."
+                  : `Оформить за ${formatMoney(
+                      selectedPlan.price,
+                    )}`}
+
                 <span>›</span>
               </button>
             </section>
@@ -1163,7 +1266,9 @@ async function buySubscription() {
                 <button
                   className="backButton"
                   type="button"
-                  onClick={() => changePage("home")}
+                  onClick={() =>
+                    changePage("home")
+                  }
                 >
                   ‹
                 </button>
@@ -1175,13 +1280,17 @@ async function buySubscription() {
               </div>
 
               <section className="walletCard">
-                <span>Доступный баланс</span>
+                <span>
+                  Доступный баланс
+                </span>
 
-                <strong>{formatMoney(balance)}</strong>
+                <strong>
+                  {formatMoney(balance)}
+                </strong>
 
                 <button
                   type="button"
-                  onClick={() => setShowDepositModal(true)}
+                  onClick={openDepositModal}
                 >
                   <span>＋</span>
                   Пополнить баланс
@@ -1193,18 +1302,22 @@ async function buySubscription() {
                   <div className="pendingSpinner" />
 
                   <div>
-                    <strong>Платёж проверяется</strong>
+                    <strong>
+                      Платёж проверяется
+                    </strong>
 
                     <p>
-                      Баланс изменится автоматически после
-                      подтверждения оплаты.
+                      Баланс изменится автоматически
+                      после подтверждения оплаты.
                     </p>
                   </div>
                 </section>
               )}
 
               <div className="sectionTitle">
-                <strong>История операций</strong>
+                <strong>
+                  История операций
+                </strong>
 
                 <small>
                   {transactions.length} операций
@@ -1218,49 +1331,62 @@ async function buySubscription() {
                   </div>
                 )}
 
-                {transactions.map((transaction) => (
-                  <article
-                    className="transactionCard"
-                    key={transaction.id}
-                  >
-                    <span
-                      className={`transactionIcon ${
-                        transaction.type === "deposit"
-                          ? "depositIcon"
-                          : "subscriptionIcon"
-                      }`}
+                {transactions.map(
+                  (transaction) => (
+                    <article
+                      className="transactionCard"
+                      key={transaction.id}
                     >
-                      {transaction.type === "deposit"
-                        ? "↓"
-                        : "◇"}
-                    </span>
-
-                    <div className="transactionContent">
-                      <strong>{transaction.title}</strong>
-
-                      <span>{transaction.date}</span>
-
-                      <small
-                        className={`transactionStatus ${transaction.status}`}
+                      <span
+                        className={`transactionIcon ${
+                          transaction.type ===
+                          "deposit"
+                            ? "depositIcon"
+                            : "subscriptionIcon"
+                        }`}
                       >
-                        {getTransactionStatusText(
-                          transaction.status,
-                        )}
-                      </small>
-                    </div>
+                        {transaction.type ===
+                        "deposit"
+                          ? "↓"
+                          : "◇"}
+                      </span>
 
-                    <strong
-                      className={
-                        transaction.amount > 0
-                          ? "positiveAmount"
-                          : "negativeAmount"
-                      }
-                    >
-                      {transaction.amount > 0 ? "+" : "−"}
-                      {formatMoney(transaction.amount)}
-                    </strong>
-                  </article>
-                ))}
+                      <div className="transactionContent">
+                        <strong>
+                          {transaction.title}
+                        </strong>
+
+                        <span>
+                          {transaction.date}
+                        </span>
+
+                        <small
+                          className={`transactionStatus ${transaction.status}`}
+                        >
+                          {getTransactionStatusText(
+                            transaction.status,
+                          )}
+                        </small>
+                      </div>
+
+                      <strong
+                        className={
+                          transaction.amount > 0
+                            ? "positiveAmount"
+                            : "negativeAmount"
+                        }
+                      >
+                        {transaction.amount > 0
+                          ? "+"
+                          : "−"}
+
+                        {formatMoney(
+                          transaction.amount,
+                        )}
+                      </strong>
+                    </article>
+                  ),
+                )}
               </div>
             </section>
           )}
@@ -1271,7 +1397,9 @@ async function buySubscription() {
                 <button
                   className="backButton"
                   type="button"
-                  onClick={() => changePage("home")}
+                  onClick={() =>
+                    changePage("home")
+                  }
                 >
                   ‹
                 </button>
@@ -1287,13 +1415,18 @@ async function buySubscription() {
                   className="profileAvatar"
                   style={avatarStyle}
                 >
-                  {!telegramUser?.photoUrl && profileInitial}
+                  {!telegramUser?.photoUrl &&
+                    profileInitial}
                 </div>
 
                 <div className="profileName">
-                  <strong>{profileName}</strong>
+                  <strong>
+                    {profileName}
+                  </strong>
 
-                  <span>{profileSubtitle}</span>
+                  <span>
+                    {profileSubtitle}
+                  </span>
                 </div>
 
                 <small
@@ -1312,12 +1445,15 @@ async function buySubscription() {
               <section className="profileBalance">
                 <div>
                   <span>Баланс</span>
-                  <strong>{formatMoney(balance)}</strong>
+
+                  <strong>
+                    {formatMoney(balance)}
+                  </strong>
                 </div>
 
                 <button
                   type="button"
-                  onClick={() => setShowDepositModal(true)}
+                  onClick={openDepositModal}
                 >
                   Пополнить
                 </button>
@@ -1328,7 +1464,9 @@ async function buySubscription() {
                   <span>◇</span>
 
                   <div>
-                    <small>Статус подписки</small>
+                    <small>
+                      Статус подписки
+                    </small>
 
                     <strong>
                       {subscriptionActive
@@ -1343,19 +1481,30 @@ async function buySubscription() {
                   <div className="subscriptionDetails">
                     <div>
                       <span>Тариф</span>
-                      <strong>{activePlanTitle}</strong>
+
+                      <strong>
+                        {activePlanTitle}
+                      </strong>
                     </div>
 
                     <div>
-                      <span>Действует до</span>
+                      <span>
+                        Действует до
+                      </span>
+
                       <strong>
-                        {formatDate(subscriptionEnd)}
+                        {formatDate(
+                          subscriptionEnd,
+                        )}
                       </strong>
                     </div>
 
                     <div>
                       <span>Осталось</span>
-                      <strong>{daysLeft} дней</strong>
+
+                      <strong>
+                        {daysLeft} дней
+                      </strong>
                     </div>
 
                     <div>
@@ -1363,12 +1512,14 @@ async function buySubscription() {
 
                       <strong
                         className={
-                          setupStatus === "connected"
+                          setupStatus ===
+                          "connected"
                             ? "greenText"
                             : ""
                         }
                       >
-                        {setupStatus === "connected"
+                        {setupStatus ===
+                        "connected"
                           ? "Подключён"
                           : "Не настроен"}
                       </strong>
@@ -1379,7 +1530,9 @@ async function buySubscription() {
                     className="secondaryButton"
                     type="button"
                     onClick={() =>
-                      changePage("subscription")
+                      changePage(
+                        "subscription",
+                      )
                     }
                   >
                     Оформить подписку
@@ -1392,14 +1545,22 @@ async function buySubscription() {
                   <button
                     className="menuCard"
                     type="button"
-                    onClick={() => changePage("home")}
+                    onClick={() =>
+                      changePage("home")
+                    }
                   >
-                    <span className="menuIcon">⚙</span>
+                    <span className="menuIcon">
+                      ⚙
+                    </span>
 
                     <div>
-                      <strong>Настроить VPN</strong>
+                      <strong>
+                        Настроить VPN
+                      </strong>
+
                       <small>
-                        Установка приложения и конфигурации
+                        Установка приложения и
+                        конфигурации
                       </small>
                     </div>
 
@@ -1410,13 +1571,22 @@ async function buySubscription() {
               <button
                 className="menuCard"
                 type="button"
-                onClick={() => changePage("wallet")}
+                onClick={() =>
+                  changePage("wallet")
+                }
               >
-                <span className="menuIcon">₽</span>
+                <span className="menuIcon">
+                  ₽
+                </span>
 
                 <div>
-                  <strong>Кошелёк и платежи</strong>
-                  <small>Баланс и история операций</small>
+                  <strong>
+                    Кошелёк и платежи
+                  </strong>
+
+                  <small>
+                    Баланс и история операций
+                  </small>
                 </div>
 
                 <b>›</b>
@@ -1426,11 +1596,16 @@ async function buySubscription() {
                 className="menuCard"
                 type="button"
               >
-                <span className="menuIcon">?</span>
+                <span className="menuIcon">
+                  ?
+                </span>
 
                 <div>
                   <strong>Поддержка</strong>
-                  <small>Помощь и ответы на вопросы</small>
+
+                  <small>
+                    Помощь и ответы на вопросы
+                  </small>
                 </div>
 
                 <b>›</b>
@@ -1440,8 +1615,8 @@ async function buySubscription() {
                 <span>🔔</span>
 
                 <p>
-                  Бот уведомит вас за 7, 3 и 1 день до окончания
-                  подписки.
+                  Бот уведомит вас за 7, 3 и 1 день
+                  до окончания подписки.
                 </p>
               </section>
             </section>
@@ -1450,9 +1625,15 @@ async function buySubscription() {
 
         <nav className="bottomNavigation">
           <button
-            className={page === "home" ? "active" : ""}
+            className={
+              page === "home"
+                ? "active"
+                : ""
+            }
             type="button"
-            onClick={() => changePage("home")}
+            onClick={() =>
+              changePage("home")
+            }
           >
             <span>⌂</span>
             <small>Главная</small>
@@ -1460,28 +1641,44 @@ async function buySubscription() {
 
           <button
             className={
-              page === "subscription" ? "active" : ""
+              page === "subscription"
+                ? "active"
+                : ""
             }
             type="button"
-            onClick={() => changePage("subscription")}
+            onClick={() =>
+              changePage("subscription")
+            }
           >
             <span>◇</span>
             <small>Подписка</small>
           </button>
 
           <button
-            className={page === "wallet" ? "active" : ""}
+            className={
+              page === "wallet"
+                ? "active"
+                : ""
+            }
             type="button"
-            onClick={() => changePage("wallet")}
+            onClick={() =>
+              changePage("wallet")
+            }
           >
             <span>₽</span>
             <small>Кошелёк</small>
           </button>
 
           <button
-            className={page === "profile" ? "active" : ""}
+            className={
+              page === "profile"
+                ? "active"
+                : ""
+            }
             type="button"
-            onClick={() => changePage("profile")}
+            onClick={() =>
+              changePage("profile")
+            }
           >
             <span>○</span>
             <small>Профиль</small>
@@ -1492,11 +1689,15 @@ async function buySubscription() {
       {showDepositModal && (
         <div
           className="modalOverlay"
-          onClick={() => setShowDepositModal(false)}
+          onClick={() =>
+            setShowDepositModal(false)
+          }
         >
           <section
             className="bottomModal"
-            onClick={(event) => event.stopPropagation()}
+            onClick={(event) =>
+              event.stopPropagation()
+            }
           >
             <div className="modalHandle" />
 
@@ -1517,20 +1718,24 @@ async function buySubscription() {
             </div>
 
             <p>
-              После оплаты операция появится со статусом
-              «Проверяем платёж».
+              После оплаты операция появится со
+              статусом «Проверяем платёж».
             </p>
 
             <div className="depositGrid">
-              {[300, 500, 1000, 2000].map((amount) => (
-                <button
-                  type="button"
-                  key={amount}
-                  onClick={() => createDeposit(amount)}
-                >
-                  {formatMoney(amount)}
-                </button>
-              ))}
+              {[300, 500, 1000, 2000].map(
+                (amount) => (
+                  <button
+                    type="button"
+                    key={amount}
+                    onClick={() =>
+                      createDeposit(amount)
+                    }
+                  >
+                    {formatMoney(amount)}
+                  </button>
+                ),
+              )}
             </div>
           </section>
         </div>
@@ -1539,19 +1744,25 @@ async function buySubscription() {
       {showSuccessModal && (
         <div
           className="modalOverlay centeredModal"
-          onClick={() => setShowSuccessModal(false)}
+          onClick={() =>
+            setShowSuccessModal(false)
+          }
         >
           <section
             className="messageModal"
-            onClick={(event) => event.stopPropagation()}
+            onClick={(event) =>
+              event.stopPropagation()
+            }
           >
-            <div className="successModalIcon">✓</div>
+            <div className="successModalIcon">
+              ✓
+            </div>
 
             <h3>Подписка оформлена</h3>
 
             <p>
-              Тариф «{selectedPlan.title}» успешно активирован.
-              Теперь настройте VPN.
+              Тариф «{selectedPlan.title}» успешно
+              активирован. Теперь настройте VPN.
             </p>
 
             <button
@@ -1572,19 +1783,25 @@ async function buySubscription() {
       {showBalanceModal && (
         <div
           className="modalOverlay centeredModal"
-          onClick={() => setShowBalanceModal(false)}
+          onClick={() =>
+            setShowBalanceModal(false)
+          }
         >
           <section
             className="messageModal"
-            onClick={(event) => event.stopPropagation()}
+            onClick={(event) =>
+              event.stopPropagation()
+            }
           >
-            <div className="warningModalIcon">!</div>
+            <div className="warningModalIcon">
+              !
+            </div>
 
             <h3>Недостаточно средств</h3>
 
             <p>
-              Пополните баланс, чтобы оформить выбранную
-              подписку.
+              Пополните баланс, чтобы оформить
+              выбранную подписку.
             </p>
 
             <button
@@ -1592,12 +1809,58 @@ async function buySubscription() {
               type="button"
               onClick={() => {
                 setShowBalanceModal(false);
+
+                const initData =
+                  requireTelegram();
+
+                if (!initData) {
+                  return;
+                }
+
                 changePage("wallet");
                 setShowDepositModal(true);
               }}
             >
               Пополнить баланс
               <span>›</span>
+            </button>
+          </section>
+        </div>
+      )}
+
+      {showTelegramModal && (
+        <div
+          className="modalOverlay centeredModal"
+          onClick={() =>
+            setShowTelegramModal(false)
+          }
+        >
+          <section
+            className="messageModal"
+            onClick={(event) =>
+              event.stopPropagation()
+            }
+          >
+            <div className="warningModalIcon">
+              !
+            </div>
+
+            <h3>Откройте через Telegram</h3>
+
+            <p>
+              Зайдите, пожалуйста, через
+              Telegram-бота, чтобы пополнить баланс
+              или оформить подписку.
+            </p>
+
+            <button
+              className="primaryButton"
+              type="button"
+              onClick={() =>
+                setShowTelegramModal(false)
+              }
+            >
+              Понятно
             </button>
           </section>
         </div>
