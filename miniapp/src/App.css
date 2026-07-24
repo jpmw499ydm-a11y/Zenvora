@@ -1910,6 +1910,7 @@ button:active {
 
 .depositGrid button:disabled,
 .modalHeader > button:disabled,
+.starsPaymentButton:disabled,
 .cryptoBotPaymentButton:disabled {
   cursor: default;
   opacity: 0.62;
@@ -1956,6 +1957,65 @@ button:active {
 .selectedDepositSummary strong {
   font-size: 13px;
   white-space: nowrap;
+}
+
+.starsPaymentButton {
+  display: grid;
+  width: 100%;
+  min-height: 66px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 208, 84, 0.3);
+  border-radius: 18px;
+  color: #ffffff;
+  background:
+    radial-gradient(
+      circle at 90% 0%,
+      rgba(255, 215, 99, 0.2),
+      transparent 38%
+    ),
+    linear-gradient(
+      145deg,
+      rgba(190, 135, 28, 0.22),
+      rgba(102, 66, 10, 0.13)
+    );
+  box-shadow:
+    0 14px 34px rgba(139, 91, 13, 0.17),
+    inset 0 1px 0 rgba(255, 255, 255, 0.09);
+  text-align: left;
+}
+
+.starsPaymentIcon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(255, 231, 149, 0.34);
+  border-radius: 14px;
+  color: #fff9dc;
+  background:
+    linear-gradient(
+      145deg,
+      #f4c947,
+      #c88c16
+    );
+  box-shadow:
+    0 9px 24px rgba(211, 149, 24, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  font-size: 20px;
+  font-weight: 900;
+}
+
+.starsPaymentButton .paymentMethodText small {
+  color: #bba66f;
+}
+
+.starsPaymentButton > b {
+  color: #e8ca78;
+  font-size: 24px;
+  font-weight: 500;
 }
 
 .cryptoBotPaymentButton {
