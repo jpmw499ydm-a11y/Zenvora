@@ -235,6 +235,32 @@ async function saveTelegramUser(
   return user;
 }
 
+async function expireCryptoTransactions(
+  telegramId: number,
+): Promise<number> {
+  const response = await supabaseRequest(
+    "rpc/expire_crypto_transactions",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        p_telegram_id: telegramId,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    throw new Error(
+      `Ошибка проверки просроченных платежей: ${errorText}`,
+    );
+  }
+
+  const result = (await response.json()) as number;
+
+  return Number.isFinite(result) ? result : 0;
+}
+
 async function loadTransactions(
   telegramId: number,
 ): Promise<DatabaseTransaction[]> {
@@ -309,7 +335,12 @@ export default {
       );
 
       const user = await saveTelegramUser(telegramUser);
-      const transactions = await loadTransactions(telegramUser.id);
+
+      await expireCryptoTransactions(telegramUser.id);
+
+      const transactions = await loadTransactions(
+        telegramUser.id,
+      );
 
       return sendJson({
         ok: true,
