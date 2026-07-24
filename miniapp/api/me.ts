@@ -92,7 +92,6 @@ async function validateTelegramData(
   }
 
   params.delete("hash");
-  params.delete("signature");
 
   const dataCheckString = Array.from(params.entries())
     .sort(([firstKey], [secondKey]) =>
