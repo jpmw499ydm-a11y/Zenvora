@@ -5,7 +5,7 @@ import {
 } from "react";
 import "./App.css";
 
-type Page = "home" | "subscription" | "wallet" | "profile";
+type Page = "home" | "connect" | "subscription" | "wallet" | "profile";
 
 type PlanId = "1" | "3" | "12";
 
@@ -1062,12 +1062,32 @@ export default function App() {
     );
   }
 
+  function openIphoneApp() {
+    openExternalLink(
+      "https://apps.apple.com/app/hiddify-proxy-vpn/id6596777532",
+    );
+  }
+
+  function openAndroidApp() {
+    openExternalLink(
+      "https://play.google.com/store/apps/details?id=app.hiddify.com",
+    );
+  }
+
+  function openInstruction() {
+    changePage("connect");
+  }
+
   function installVpn() {
     setSetupStatus("config-opened");
+  }
 
-    openExternalLink(
-      "https://example.com/vpn-config",
-    );
+  function checkConnection() {
+    setSetupStatus("checking");
+
+    window.setTimeout(() => {
+      setSetupStatus("connected");
+    }, 1800);
   }
 
   function getTransactionStatusText(
@@ -1242,7 +1262,7 @@ export default function App() {
         <button
           className="primaryButton"
           type="button"
-          onClick={installVpn}
+          onClick={() => changePage("connect")}
         >
           {connectionReady ? "Открыть подключение" : "Подключиться"}
           <span>›</span>
@@ -1251,7 +1271,7 @@ export default function App() {
         <button
           className="menuCard"
           type="button"
-          onClick={installVpn}
+          onClick={() => changePage("connect")}
         >
           <span className="menuIcon">⌁</span>
 
@@ -1285,6 +1305,120 @@ export default function App() {
             Бот предупредит вас за 7, 3 и 1 день до окончания
             подписки.
           </p>
+        </section>
+      </section>
+    );
+  }
+
+  function renderConnectPage() {
+    return (
+      <section className="setupPage">
+        <div className="pageHeader">
+          <button
+            className="backButton"
+            type="button"
+            onClick={() => changePage("home")}
+          >
+            ‹
+          </button>
+
+          <div>
+            <small>ПОДКЛЮЧЕНИЕ</small>
+            <h2>Настройка VPN</h2>
+          </div>
+        </div>
+
+        <div className="setupTitle">
+          <span>ДО 5 УСТРОЙСТВ</span>
+          <h1>Подключите устройство</h1>
+          <p>Выполните шаги ниже. После появления сервера сюда будет подставляться ваша персональная конфигурация.</p>
+        </div>
+
+        <div className="progressLine">
+          <span className="active" />
+          <span className={setupStatus !== "not-started" ? "active" : ""} />
+          <span className={setupStatus === "checking" || setupStatus === "connected" ? "active" : ""} />
+        </div>
+
+        <div className="setupList">
+          <article className="setupCard">
+            <div className="stepNumber">1</div>
+            <div className="stepContent">
+              <small>ПЕРВЫЙ ШАГ</small>
+              <h3>Установите приложение</h3>
+              <p>Выберите приложение для вашего устройства.</p>
+              <div className="appButtons">
+                <button type="button" onClick={openIphoneApp}>
+                  <span className="appIcon"></span>
+                  <div><small>Скачать для</small><strong>iPhone</strong></div>
+                </button>
+                <button type="button" onClick={openAndroidApp}>
+                  <span className="appIcon">▶</span>
+                  <div><small>Скачать для</small><strong>Android</strong></div>
+                </button>
+              </div>
+            </div>
+          </article>
+
+          <article className="setupCard">
+            <div className="stepNumber">2</div>
+            <div className="stepContent">
+              <small>ВТОРОЙ ШАГ</small>
+              <h3>Откройте инструкцию</h3>
+              <p>Здесь будет пошаговое руководство по импорту персональной конфигурации.</p>
+              <button className="instructionCard" type="button" onClick={openInstruction}>
+                <span className="instructionIcon">?</span>
+                <div><strong>Инструкция по установке</strong><small>Вы уже на странице подключения</small></div>
+                <b>✓</b>
+              </button>
+            </div>
+          </article>
+
+          <article className={`setupCard ${setupStatus !== "not-started" ? "setupCardCompleted" : ""}`}>
+            <div className="stepNumber">{setupStatus !== "not-started" ? "✓" : "3"}</div>
+            <div className="stepContent">
+              <small>ПОСЛЕДНИЙ ШАГ</small>
+              <h3>Добавьте конфигурацию</h3>
+              <p>Пока сервер не подключён, кнопка работает в тестовом режиме и никуда не переводит.</p>
+
+              {setupStatus === "not-started" && (
+                <button className="primaryButton" type="button" onClick={installVpn}>
+                  Получить конфигурацию <span>›</span>
+                </button>
+              )}
+
+              {setupStatus === "config-opened" && (
+                <div className="configOpenedBlock">
+                  <div className="configNotice">
+                    <span>✓</span>
+                    <div><strong>Тестовая конфигурация подготовлена</strong><p>После настройки сервера здесь откроется реальная ссылка.</p></div>
+                  </div>
+                  <button className="primaryButton" type="button" onClick={checkConnection}>
+                    Проверить подключение <span>›</span>
+                  </button>
+                </div>
+              )}
+
+              {setupStatus === "checking" && (
+                <div className="checkingBlock">
+                  <div className="checkingSpinner" />
+                  <div><strong>Проверяем подключение</strong><p>Это займёт несколько секунд</p></div>
+                </div>
+              )}
+
+              {setupStatus === "connected" && (
+                <div className="configNotice">
+                  <span>✓</span>
+                  <div><strong>Устройство подключено</strong><p>Тестовая проверка завершена успешно.</p></div>
+                </div>
+              )}
+            </div>
+          </article>
+        </div>
+
+        <section className="subscriptionSummary">
+          <div><span>Устройства</span><strong>0 из 5</strong></div>
+          <div><span>Осталось</span><strong>{daysLeft} дней</strong></div>
         </section>
       </section>
     );
@@ -1367,6 +1501,12 @@ export default function App() {
           {page === "home" && (
             <section className="page homePage">
               {renderHome()}
+            </section>
+          )}
+
+          {page === "connect" && (
+            <section className="page">
+              {renderConnectPage()}
             </section>
           )}
 
