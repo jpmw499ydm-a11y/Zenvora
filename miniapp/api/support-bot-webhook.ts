@@ -464,7 +464,7 @@ function getRatingKeyboard(
   return {
     inline_keyboard: [
       [1, 2, 3, 4, 5].map((rating) => ({
-        text: `${"⭐".repeat(rating)} ${rating}`,
+        text: `${rating} ⭐`,
         callback_data: `rating:${ticketId}:${rating}`,
       })),
     ],
