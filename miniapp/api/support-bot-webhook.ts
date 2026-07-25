@@ -13,6 +13,7 @@ type TelegramChat = {
 
 type TelegramMessage = {
   message_id: number;
+  message_thread_id?: number;
   from?: TelegramUser;
   chat: TelegramChat;
   text?: string;
@@ -1045,6 +1046,32 @@ async function handleMessage(
   }
 
   const text = message.text?.trim() ?? "";
+
+  const command = text.split(/\s+/)[0]?.toLowerCase() ?? "";
+  const commandName = command.split("@")[0];
+
+  if (commandName === "/id") {
+    const topicId = message.message_thread_id;
+
+    await telegramRequest("sendMessage", {
+      chat_id: message.chat.id,
+      text: [
+        "🆔 Данные этого чата",
+        "",
+        `Chat ID: ${message.chat.id}`,
+        `Topic ID: ${topicId ?? "нет — сообщение отправлено вне темы"}`,
+        `Тип чата: ${message.chat.type}`,
+      ].join("\n"),
+      disable_web_page_preview: true,
+      ...(topicId
+        ? {
+            message_thread_id: topicId,
+          }
+        : {}),
+    });
+
+    return;
+  }
 
   if (
     text === "/start" ||
