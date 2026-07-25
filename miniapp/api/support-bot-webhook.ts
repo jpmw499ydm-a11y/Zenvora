@@ -85,6 +85,18 @@ type TicketRow = {
     | "closed";
   category: TicketCategory;
   operator_topic_id: number | null;
+  subject?: string | null;
+  problem_summary?: string | null;
+  previous_ticket_id?: number | null;
+};
+
+type SupportRatingRow = {
+  id: number;
+  ticket_id: number;
+  requester_telegram_id: number;
+  rating: number;
+  problem_resolved: boolean | null;
+  reopened_ticket_id: number | null;
 };
 
 type TelegramForumTopic = {
@@ -443,6 +455,41 @@ function getCategoryTitle(category: TicketCategory) {
   };
 
   return titles[category];
+}
+
+
+function getRatingKeyboard(
+  ticketId: number,
+): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [1, 2, 3, 4, 5].map((rating) => ({
+        text: `${"⭐".repeat(rating)} ${rating}`,
+        callback_data: `rating:${ticketId}:${rating}`,
+      })),
+    ],
+  };
+}
+
+function getResolvedKeyboard(
+  ticketId: number,
+): InlineKeyboardMarkup {
+  return {
+    inline_keyboard: [
+      [
+        {
+          text: "✅ Да, проблема решена",
+          callback_data: `resolved:${ticketId}:yes`,
+        },
+      ],
+      [
+        {
+          text: "❌ Нет, проблема осталась",
+          callback_data: `resolved:${ticketId}:no`,
+        },
+      ],
+    ],
+  };
 }
 
 function getAccountKeyboard(): InlineKeyboardMarkup {
@@ -882,6 +929,149 @@ async function ensureOperatorTopic(
   return topicId;
 }
 
+
+async function getTicketForRating(
+  ticketId: number,
+  requesterTelegramId: number,
+): Promise<TicketRow | null> {
+  const rows = await readSupabaseRows<TicketRow>(
+    `support_tickets?id=eq.${ticketId}` +
+      `&requester_telegram_id=eq.${requesterTelegramId}` +
+      "&select=id,requester_telegram_id,status,category,operator_topic_id,subject,problem_summary,previous_ticket_id" +
+      "&limit=1",
+  );
+
+  return rows[0] ?? null;
+}
+
+async function getRatingForTicket(
+  ticketId: number,
+): Promise<SupportRatingRow | null> {
+  const rows = await readSupabaseRows<SupportRatingRow>(
+    `support_ratings?ticket_id=eq.${ticketId}` +
+      "&select=id,ticket_id,requester_telegram_id,rating,problem_resolved,reopened_ticket_id" +
+      "&limit=1",
+  );
+
+  return rows[0] ?? null;
+}
+
+async function createRating(
+  ticketId: number,
+  requesterTelegramId: number,
+  rating: number,
+): Promise<SupportRatingRow> {
+  const response = await supabaseRequest(
+    "support_ratings?select=id,ticket_id,requester_telegram_id,rating,problem_resolved,reopened_ticket_id",
+    {
+      method: "POST",
+      headers: {
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify({
+        ticket_id: ticketId,
+        requester_telegram_id: requesterTelegramId,
+        rating,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `SUPPORT_RATING_CREATE:${await response.text()}`,
+    );
+  }
+
+  const rows =
+    (await response.json()) as SupportRatingRow[];
+  const created = rows[0];
+
+  if (!created) {
+    throw new Error("SUPPORT_RATING_CREATE:NO_RESULT");
+  }
+
+  return created;
+}
+
+async function updateRatingResolution(
+  ticketId: number,
+  problemResolved: boolean,
+  reopenedTicketId?: number,
+) {
+  const response = await supabaseRequest(
+    `support_ratings?ticket_id=eq.${ticketId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        problem_resolved: problemResolved,
+        resolved_answered_at:
+          new Date().toISOString(),
+        reopened_ticket_id:
+          reopenedTicketId ?? null,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `SUPPORT_RATING_UPDATE:${await response.text()}`,
+    );
+  }
+}
+
+async function createRepeatedTicket(
+  requester: TelegramUser,
+  previousTicket: TicketRow,
+): Promise<TicketRow> {
+  const previousProblem =
+    previousTicket.problem_summary?.trim() ||
+    getCategoryTitle(previousTicket.category);
+
+  const response = await supabaseRequest(
+    "support_tickets?select=id,requester_telegram_id,status,category,operator_topic_id,subject,problem_summary,previous_ticket_id",
+    {
+      method: "POST",
+      headers: {
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify({
+        requester_telegram_id: requester.id,
+        account_telegram_id: requester.id,
+        category: previousTicket.category,
+        status: "waiting_operator",
+        subject: `Повторное обращение: ${
+          previousTicket.subject ||
+          getCategoryTitle(previousTicket.category)
+        }`,
+        problem_summary: previousProblem,
+        previous_ticket_id: previousTicket.id,
+        last_user_message_at:
+          new Date().toISOString(),
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `SUPPORT_REPEAT_TICKET_CREATE:${await response.text()}`,
+    );
+  }
+
+  const rows = (await response.json()) as TicketRow[];
+  const ticket = rows[0];
+
+  if (!ticket) {
+    throw new Error(
+      "SUPPORT_REPEAT_TICKET_CREATE:NO_RESULT",
+    );
+  }
+
+  return ticket;
+}
+
 async function createOrEscalateTicket(
   requester: TelegramUser,
   category: TicketCategory,
@@ -1135,6 +1325,256 @@ async function handleCallbackQuery(
 
   await answerCallbackQuery(callbackQuery.id);
 
+  if (data.startsWith("rating:")) {
+    const [, rawTicketId, rawRating] =
+      data.split(":");
+    const ticketId = Number(rawTicketId);
+    const rating = Number(rawRating);
+
+    if (
+      !Number.isSafeInteger(ticketId) ||
+      !Number.isInteger(rating) ||
+      rating < 1 ||
+      rating > 5
+    ) {
+      await sendMessage(
+        chatId,
+        "Не удалось сохранить оценку.",
+      );
+      return;
+    }
+
+    const ticket = await getTicketForRating(
+      ticketId,
+      callbackQuery.from.id,
+    );
+
+    if (!ticket || ticket.status !== "closed") {
+      await sendMessage(
+        chatId,
+        "Это обращение не найдено или ещё не закрыто.",
+      );
+      return;
+    }
+
+    const existingRating =
+      await getRatingForTicket(ticketId);
+
+    if (existingRating) {
+      await sendMessage(
+        chatId,
+        `Вы уже оценили обращение №${ticketId} на ${existingRating.rating} из 5.`,
+      );
+      return;
+    }
+
+    await createRating(
+      ticketId,
+      callbackQuery.from.id,
+      rating,
+    );
+
+    await sendMessage(
+      getSupportGroupChatId(),
+      `⭐ Пользователь оценил обращение №${ticketId}: ${rating} из 5.`,
+      undefined,
+      ticket.operator_topic_id ?? undefined,
+    );
+
+    if (rating <= 2) {
+      await sendMessage(
+        chatId,
+        [
+          `Спасибо. Оценка обращения №${ticketId}: ${rating} из 5.`,
+          "",
+          "Удалось ли решить вашу проблему?",
+        ].join("\n"),
+        getResolvedKeyboard(ticketId),
+      );
+      return;
+    }
+
+    await updateRatingResolution(
+      ticketId,
+      true,
+    );
+
+    await sendMessage(
+      chatId,
+      [
+        `Спасибо за оценку ${rating} из 5!`,
+        "",
+        "Рады, что смогли помочь.",
+      ].join("\n"),
+    );
+    return;
+  }
+
+  if (data.startsWith("resolved:")) {
+    const [, rawTicketId, answer] =
+      data.split(":");
+    const ticketId = Number(rawTicketId);
+
+    if (
+      !Number.isSafeInteger(ticketId) ||
+      (answer !== "yes" && answer !== "no")
+    ) {
+      await sendMessage(
+        chatId,
+        "Не удалось обработать ответ.",
+      );
+      return;
+    }
+
+    const ticket = await getTicketForRating(
+      ticketId,
+      callbackQuery.from.id,
+    );
+    const rating =
+      await getRatingForTicket(ticketId);
+
+    if (!ticket || !rating) {
+      await sendMessage(
+        chatId,
+        "Оценка или обращение не найдены.",
+      );
+      return;
+    }
+
+    if (rating.rating > 2) {
+      await sendMessage(
+        chatId,
+        "Дополнительный ответ для этой оценки не требуется.",
+      );
+      return;
+    }
+
+    if (rating.problem_resolved !== null) {
+      await sendMessage(
+        chatId,
+        rating.problem_resolved
+          ? "Вы уже указали, что проблема решена."
+          : `Проблема уже передана повторно в обращение №${rating.reopened_ticket_id}.`,
+      );
+      return;
+    }
+
+    if (answer === "yes") {
+      await updateRatingResolution(
+        ticketId,
+        true,
+      );
+
+      await sendMessage(
+        getSupportGroupChatId(),
+        `✅ Пользователь подтвердил, что проблема по обращению №${ticketId} решена.`,
+        undefined,
+        ticket.operator_topic_id ?? undefined,
+      );
+
+      await sendMessage(
+        chatId,
+        "Спасибо за ответ. Хорошо, что проблема решена.",
+      );
+      return;
+    }
+
+    const existingOpenTicket =
+      await findOpenTicket(
+        callbackQuery.from.id,
+      );
+
+    if (existingOpenTicket) {
+      await updateRatingResolution(
+        ticketId,
+        false,
+        existingOpenTicket.id,
+      );
+
+      await sendMessage(
+        chatId,
+        `У вас уже есть активное обращение №${existingOpenTicket.id}. Продолжите описывать проблему в этом чате.`,
+      );
+      return;
+    }
+
+    const context = await getAccountContext(
+      callbackQuery.from.id,
+    );
+
+    if (!context) {
+      await showAccount(
+        chatId,
+        callbackQuery.from.id,
+      );
+      return;
+    }
+
+    const repeatedTicket =
+      await createRepeatedTicket(
+        callbackQuery.from,
+        ticket,
+      );
+
+    const topicId = await ensureOperatorTopic(
+      repeatedTicket,
+      callbackQuery.from,
+      context,
+    );
+
+    await updateRatingResolution(
+      ticketId,
+      false,
+      repeatedTicket.id,
+    );
+
+    await saveSupportMessage(
+      repeatedTicket.id,
+      "system",
+      [
+        `Повторное обращение после оценки ${rating.rating} из 5.`,
+        `Предыдущее обращение: №${ticket.id}.`,
+        `Предыдущая проблема: ${
+          ticket.problem_summary ||
+          getCategoryTitle(ticket.category)
+        }`,
+      ].join("\n"),
+      callbackQuery.from.id,
+    );
+
+    await sendMessage(
+      getSupportGroupChatId(),
+      [
+        "⚠️ Повторное обращение после низкой оценки",
+        "",
+        `Предыдущее обращение: №${ticket.id}`,
+        `Оценка: ${rating.rating} из 5`,
+        `Категория: ${getCategoryTitle(ticket.category)}`,
+        `Проблема: ${
+          ticket.problem_summary ||
+          getCategoryTitle(ticket.category)
+        }`,
+        "",
+        "Пользователь сообщил, что проблема не решена.",
+      ].join("\n"),
+      undefined,
+      topicId,
+    );
+
+    await sendMessage(
+      chatId,
+      [
+        "Понял. Проблема передана оператору повторно.",
+        "",
+        `Создано новое обращение №${repeatedTicket.id}.`,
+        `Мы взяли описание из предыдущего обращения №${ticket.id}.`,
+        "",
+        "Можете следующим сообщением добавить новые подробности.",
+      ].join("\n"),
+    );
+    return;
+  }
+
   if (
     data === "account:confirm" ||
     data === "menu:categories"
@@ -1331,28 +1771,21 @@ async function handleMessage(
         [
           `Обращение №${ticket.id} закрыто оператором.`,
           "",
-          "При новой проблеме нажмите /start.",
+          "Оцените, пожалуйста, работу поддержки от 1 до 5.",
         ].join("\n"),
+        getRatingKeyboard(ticket.id),
       );
 
       await sendMessage(
         supportGroupChatId,
-        `✅ Обращение №${ticket.id} закрыто.`,
+        [
+          `✅ Обращение №${ticket.id} закрыто.`,
+          "",
+          "Ожидаем оценку пользователя.",
+        ].join("\n"),
         undefined,
         topicId,
       );
-
-      try {
-        await telegramRequest("closeForumTopic", {
-          chat_id: supportGroupChatId,
-          message_thread_id: topicId,
-        });
-      } catch (error) {
-        console.error(
-          "Не удалось закрыть тему:",
-          error,
-        );
-      }
 
       return;
     }
