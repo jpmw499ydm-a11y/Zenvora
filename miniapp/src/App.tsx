@@ -1213,272 +1213,105 @@ export default function App() {
     );
   }
 
-  function renderSetupHome() {
+  function renderActiveHome() {
+    const renewalWarning = daysLeft <= 7;
+    const connectionReady = setupStatus === "connected";
+
     return (
       <section className="setupPage">
         <div className="setupTitle">
           <span>ПОДПИСКА АКТИВНА</span>
 
-          <h1>Настройте VPN</h1>
+          <h1>Ваш Zenvora готов</h1>
 
           <p>
-            Выполните три шага, чтобы начать
-            пользоваться Zenvora.
+            Управляйте подпиской и подключайте до пяти
+            устройств.
           </p>
         </div>
 
-        <div className="progressLine">
-          <span className="active" />
+        {renewalWarning && (
+          <section className="notificationCard">
+            <span>⚠️</span>
 
-          <span
-            className={
-              setupStatus !== "not-started"
-                ? "active"
-                : ""
-            }
-          />
+            <p>
+              Подписка закончится через {daysLeft} {daysLeft === 1 ? "день" : daysLeft < 5 ? "дня" : "дней"}.
+              Продлите её заранее, чтобы VPN продолжил работать.
+            </p>
+          </section>
+        )}
 
-          <span
-            className={
-              setupStatus === "checking" ||
-              setupStatus === "connected"
-                ? "active"
-                : ""
-            }
-          />
-        </div>
+        <section className="connectedInfo">
+          <div>
+            <span>Статус</span>
+            <strong className="greenText">Активна</strong>
+          </div>
 
-        <div className="setupList">
-          <article className="setupCard">
-            <div className="stepNumber">1</div>
-
-            <div className="stepContent">
-              <small>ПЕРВЫЙ ШАГ</small>
-
-              <h3>Установите приложение</h3>
-
-              <p>
-                Выберите приложение для вашего
-                устройства.
-              </p>
-
-              <div className="appButtons">
-                <button
-                  type="button"
-                  onClick={openIphoneApp}
-                >
-                  <span className="appIcon"></span>
-
-                  <div>
-                    <small>Скачать для</small>
-                    <strong>iPhone</strong>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={openAndroidApp}
-                >
-                  <span className="appIcon">▶</span>
-
-                  <div>
-                    <small>Скачать для</small>
-                    <strong>Android</strong>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </article>
-
-          <article className="setupCard">
-            <div className="stepNumber">2</div>
-
-            <div className="stepContent">
-              <small>ВТОРОЙ ШАГ</small>
-
-              <h3>Откройте инструкцию</h3>
-
-              <p>
-                Посмотрите пошаговое руководство по
-                установке.
-              </p>
-
-              <button
-                className="instructionCard"
-                type="button"
-                onClick={openInstruction}
-              >
-                <span className="instructionIcon">
-                  ?
-                </span>
-
-                <div>
-                  <strong>
-                    Инструкция по установке
-                  </strong>
-
-                  <small>
-                    Открыть руководство
-                  </small>
-                </div>
-
-                <b>›</b>
-              </button>
-            </div>
-          </article>
-
-          <article
-            className={`setupCard ${
-              setupStatus !== "not-started"
-                ? "setupCardCompleted"
-                : ""
-            }`}
-          >
-            <div className="stepNumber">
-              {setupStatus !== "not-started"
-                ? "✓"
-                : "3"}
-            </div>
-
-            <div className="stepContent">
-              <small>ПОСЛЕДНИЙ ШАГ</small>
-
-              <h3>Установите VPN</h3>
-
-              <p>
-                Откройте персональную конфигурацию и
-                добавьте её в установленное приложение.
-              </p>
-
-              {setupStatus === "not-started" && (
-                <button
-                  className="primaryButton"
-                  type="button"
-                  onClick={installVpn}
-                >
-                  Установить VPN
-                  <span>›</span>
-                </button>
-              )}
-
-              {setupStatus === "config-opened" && (
-                <div className="configOpenedBlock">
-                  <div className="configNotice">
-                    <span>✓</span>
-
-                    <div>
-                      <strong>
-                        Конфигурация открыта
-                      </strong>
-
-                      <p>
-                        Установите её и вернитесь в
-                        Zenvora.
-                      </p>
-                    </div>
-                  </div>
-
-                  <button
-                    className="primaryButton"
-                    type="button"
-                    onClick={checkConnection}
-                  >
-                    Проверить подключение
-                    <span>›</span>
-                  </button>
-
-                  <button
-                    className="textButton"
-                    type="button"
-                    onClick={installVpn}
-                  >
-                    Открыть конфигурацию ещё раз
-                  </button>
-                </div>
-              )}
-
-              {setupStatus === "checking" && (
-                <div className="checkingBlock">
-                  <div className="checkingSpinner" />
-
-                  <div>
-                    <strong>
-                      Проверяем подключение
-                    </strong>
-
-                    <p>
-                      Это займёт несколько секунд
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </article>
-        </div>
-
-        <section className="subscriptionSummary">
           <div>
             <span>Тариф</span>
-            <strong>{activePlanTitle}</strong>
+            <strong>{activePlanTitle || "Zenvora Premium"}</strong>
           </div>
 
           <div>
             <span>Осталось</span>
             <strong>{daysLeft} дней</strong>
           </div>
-        </section>
-      </section>
-    );
-  }
-
-  function renderConnectedHome() {
-    return (
-      <section className="connectedPage">
-        <div className="connectedCheck">✓</div>
-
-        <span className="connectedBadge">
-          VPN ПОДКЛЮЧЁН
-        </span>
-
-        <h1>Всё готово!</h1>
-
-        <p>
-          Zenvora успешно настроена. Желаем приятного
-          и безопасного пользования!
-        </p>
-
-        <section className="connectedInfo">
-          <div>
-            <span>Статус</span>
-
-            <strong className="greenText">
-              Подключение защищено
-            </strong>
-          </div>
-
-          <div>
-            <span>Тариф</span>
-            <strong>{activePlanTitle}</strong>
-          </div>
 
           <div>
             <span>Действует до</span>
-
             <strong>
-              {subscriptionEnd
-                ? formatDate(subscriptionEnd)
-                : "—"}
+              {subscriptionEnd ? formatDate(subscriptionEnd) : "—"}
             </strong>
           </div>
         </section>
 
         <button
-          className="secondaryButton"
+          className="primaryButton"
           type="button"
-          onClick={() => changePage("profile")}
+          onClick={installVpn}
         >
-          Открыть профиль
+          {connectionReady ? "Открыть подключение" : "Подключиться"}
+          <span>›</span>
         </button>
+
+        <button
+          className="menuCard"
+          type="button"
+          onClick={installVpn}
+        >
+          <span className="menuIcon">⌁</span>
+
+          <div>
+            <strong>Мои устройства</strong>
+            <small>Использовано 0 из 5</small>
+          </div>
+
+          <b>›</b>
+        </button>
+
+        <button
+          className="menuCard"
+          type="button"
+          onClick={() => changePage("subscription")}
+        >
+          <span className="menuIcon">↻</span>
+
+          <div>
+            <strong>Продлить подписку</strong>
+            <small>Новые дни добавятся к текущему сроку</small>
+          </div>
+
+          <b>›</b>
+        </button>
+
+        <section className="notificationCard">
+          <span>🔔</span>
+
+          <p>
+            Бот предупредит вас за 7, 3 и 1 день до окончания
+            подписки.
+          </p>
+        </section>
       </section>
     );
   }
@@ -1488,11 +1321,7 @@ export default function App() {
       return renderPublicHome();
     }
 
-    if (setupStatus === "connected") {
-      return renderConnectedHome();
-    }
-
-    return renderSetupHome();
+    return renderActiveHome();
   }
 
   return (
