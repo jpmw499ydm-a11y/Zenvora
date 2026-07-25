@@ -1062,38 +1062,12 @@ export default function App() {
     );
   }
 
-  function openIphoneApp() {
-    openExternalLink(
-      "https://example.com/iphone",
-    );
-  }
-
-  function openAndroidApp() {
-    openExternalLink(
-      "https://example.com/android",
-    );
-  }
-
-  function openInstruction() {
-    openExternalLink(
-      "https://example.com/instruction",
-    );
-  }
-
   function installVpn() {
     setSetupStatus("config-opened");
 
     openExternalLink(
       "https://example.com/vpn-config",
     );
-  }
-
-  function checkConnection() {
-    setSetupStatus("checking");
-
-    window.setTimeout(() => {
-      setSetupStatus("connected");
-    }, 1800);
   }
 
   function getTransactionStatusText(
