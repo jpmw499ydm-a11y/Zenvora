@@ -76,6 +76,7 @@ type TicketCategory =
 
 type TicketRow = {
   id: number;
+  requester_telegram_id: number;
   status:
     | "bot_helping"
     | "waiting_operator"
@@ -83,6 +84,12 @@ type TicketRow = {
     | "waiting_user"
     | "closed";
   category: TicketCategory;
+  operator_topic_id: number | null;
+};
+
+type TelegramForumTopic = {
+  message_thread_id: number;
+  name: string;
 };
 
 type AccountContext = {
@@ -197,6 +204,7 @@ async function sendMessage(
   chatId: number,
   text: string,
   replyMarkup?: InlineKeyboardMarkup,
+  messageThreadId?: number,
 ) {
   return telegramRequest("sendMessage", {
     chat_id: chatId,
@@ -207,7 +215,136 @@ async function sendMessage(
           reply_markup: replyMarkup,
         }
       : {}),
+    ...(messageThreadId
+      ? {
+          message_thread_id: messageThreadId,
+        }
+      : {}),
   });
+}
+
+function getSupportGroupChatId() {
+  const value = Number(
+    getEnvironmentVariable("SUPPORT_GROUP_CHAT_ID"),
+  );
+
+  if (!Number.isSafeInteger(value)) {
+    throw new Error(
+      "ENV_INVALID:SUPPORT_GROUP_CHAT_ID",
+    );
+  }
+
+  return value;
+}
+
+function buildTopicName(
+  ticketId: number,
+  requester: TelegramUser,
+) {
+  const name = [
+    requester.first_name,
+    requester.last_name,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  const username = requester.username
+    ? ` @${requester.username}`
+    : "";
+
+  return `#${ticketId} ${name || requester.id}${username}`.slice(
+    0,
+    128,
+  );
+}
+
+async function createOperatorTopic(
+  ticket: TicketRow,
+  requester: TelegramUser,
+) {
+  if (ticket.operator_topic_id) {
+    return ticket.operator_topic_id;
+  }
+
+  const groupChatId = getSupportGroupChatId();
+
+  const topic = await telegramRequest<TelegramForumTopic>(
+    "createForumTopic",
+    {
+      chat_id: groupChatId,
+      name: buildTopicName(ticket.id, requester),
+    },
+  );
+
+  const response = await supabaseRequest(
+    `support_tickets?id=eq.${ticket.id}`,
+    {
+      method: "PATCH",
+      headers: {
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        operator_topic_id: topic.message_thread_id,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `SUPPORT_TOPIC_SAVE:${await response.text()}`,
+    );
+  }
+
+  ticket.operator_topic_id = topic.message_thread_id;
+
+  return topic.message_thread_id;
+}
+
+async function sendOperatorCard(
+  ticket: TicketRow,
+  requester: TelegramUser,
+  context: AccountContext,
+  topicId: number,
+) {
+  const fullName = [
+    context.user.first_name,
+    context.user.last_name,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  await sendMessage(
+    getSupportGroupChatId(),
+    [
+      `🆕 Обращение №${ticket.id}`,
+      "",
+      `Категория: ${getCategoryTitle(ticket.category)}`,
+      `Пользователь: ${fullName}`,
+      `Telegram ID: ${requester.id}`,
+      `Username: ${
+        requester.username
+          ? `@${requester.username}`
+          : "не указан"
+      }`,
+      `Подписка: ${
+        isSubscriptionActive(
+          context.user.subscription_end,
+        )
+          ? "активна"
+          : "неактивна"
+      }`,
+      `Тариф: ${
+        context.user.active_plan_title ?? "не выбран"
+      }`,
+      `Устройства: ${context.devicesUsed} из ${DEVICE_LIMIT}`,
+      "",
+      "Ответьте обычным сообщением в этой теме — бот отправит текст пользователю.",
+      "Для закрытия обращения напишите /close.",
+    ].join("\n"),
+    undefined,
+    topicId,
+  );
 }
 
 async function answerCallbackQuery(
@@ -679,11 +816,70 @@ async function findOpenTicket(
 ): Promise<TicketRow | null> {
   const tickets = await readSupabaseRows<TicketRow>(
     `support_tickets?requester_telegram_id=eq.${requesterTelegramId}` +
-      "&status=neq.closed&select=id,status,category" +
+      "&status=neq.closed&select=id,requester_telegram_id,status,category,operator_topic_id" +
       "&order=created_at.desc&limit=1",
   );
 
   return tickets[0] ?? null;
+}
+
+async function findTicketByTopic(
+  operatorTopicId: number,
+): Promise<TicketRow | null> {
+  const tickets = await readSupabaseRows<TicketRow>(
+    `support_tickets?operator_topic_id=eq.${operatorTopicId}` +
+      "&status=neq.closed&select=id,requester_telegram_id,status,category,operator_topic_id" +
+      "&order=created_at.desc&limit=1",
+  );
+
+  return tickets[0] ?? null;
+}
+
+async function updateTicketStatus(
+  ticketId: number,
+  status: TicketRow["status"],
+) {
+  const response = await supabaseRequest(
+    `support_tickets?id=eq.${ticketId}`,
+    {
+      method: "PATCH",
+      headers: {
+        Prefer: "return=minimal",
+      },
+      body: JSON.stringify({
+        status,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `SUPPORT_TICKET_STATUS:${await response.text()}`,
+    );
+  }
+}
+
+async function ensureOperatorTopic(
+  ticket: TicketRow,
+  requester: TelegramUser,
+  context: AccountContext,
+) {
+  const hadTopic = Boolean(ticket.operator_topic_id);
+  const topicId = await createOperatorTopic(
+    ticket,
+    requester,
+  );
+
+  if (!hadTopic) {
+    await sendOperatorCard(
+      ticket,
+      requester,
+      context,
+      topicId,
+    );
+  }
+
+  return topicId;
 }
 
 async function createOrEscalateTicket(
@@ -696,7 +892,7 @@ async function createOrEscalateTicket(
 
   if (currentTicket) {
     const response = await supabaseRequest(
-      `support_tickets?id=eq.${currentTicket.id}&select=id,status,category`,
+      `support_tickets?id=eq.${currentTicket.id}&select=id,requester_telegram_id,status,category,operator_topic_id`,
       {
         method: "PATCH",
         headers: {
@@ -726,7 +922,7 @@ async function createOrEscalateTicket(
   }
 
   const response = await supabaseRequest(
-    "support_tickets?select=id,status,category",
+    "support_tickets?select=id,requester_telegram_id,status,category,operator_topic_id",
     {
       method: "POST",
       headers: {
@@ -765,7 +961,7 @@ async function createOrEscalateTicket(
 
 async function saveSupportMessage(
   ticketId: number,
-  senderType: "user" | "bot" | "system",
+  senderType: "user" | "bot" | "operator" | "system",
   text: string,
   senderTelegramId?: number,
   sourceMessage?: TelegramMessage,
@@ -1007,6 +1203,12 @@ async function handleCallbackQuery(
       getCategoryTitle(category),
     );
 
+    const topicId = await ensureOperatorTopic(
+      ticket,
+      callbackQuery.from,
+      context,
+    );
+
     await saveSupportMessage(
       ticket.id,
       "system",
@@ -1017,13 +1219,24 @@ async function handleCallbackQuery(
     );
 
     await sendMessage(
+      getSupportGroupChatId(),
+      [
+        "👤 Пользователь запросил оператора.",
+        `Категория: ${getCategoryTitle(category)}`,
+      ].join("\n"),
+      undefined,
+      topicId,
+    );
+
+    await sendMessage(
       chatId,
       [
         `Обращение №${ticket.id} создано.`,
         "",
+        "Для него уже создана отдельная тема в группе поддержки.",
         "Напишите следующим сообщением, что произошло, на каком устройстве возникла проблема и какой текст ошибки вы видите.",
         "",
-        "Сообщение сохранится в обращении. На следующем этапе мы подключим закрытую группу операторов, и ответы будут приходить сюда от имени Zenvora Support.",
+        "Ответ оператора придёт прямо сюда.",
       ].join("\n"),
     );
 
@@ -1047,7 +1260,8 @@ async function handleMessage(
 
   const text = message.text?.trim() ?? "";
 
-  const command = text.split(/\s+/)[0]?.toLowerCase() ?? "";
+  const command =
+    text.split(/\s+/)[0]?.toLowerCase() ?? "";
   const commandName = command.split("@")[0];
 
   if (commandName === "/id") {
@@ -1059,7 +1273,10 @@ async function handleMessage(
         "🆔 Данные этого чата",
         "",
         `Chat ID: ${message.chat.id}`,
-        `Topic ID: ${topicId ?? "нет — сообщение отправлено вне темы"}`,
+        `Topic ID: ${
+          topicId ??
+          "нет — сообщение отправлено вне темы"
+        }`,
         `Тип чата: ${message.chat.type}`,
       ].join("\n"),
       disable_web_page_preview: true,
@@ -1069,6 +1286,98 @@ async function handleMessage(
           }
         : {}),
     });
+
+    return;
+  }
+
+  const supportGroupChatId =
+    getSupportGroupChatId();
+
+  if (message.chat.id === supportGroupChatId) {
+    const topicId = message.message_thread_id;
+
+    if (!topicId || !text) {
+      return;
+    }
+
+    const ticket = await findTicketByTopic(topicId);
+
+    if (!ticket) {
+      await sendMessage(
+        supportGroupChatId,
+        "Для этой темы не найдено активное обращение.",
+        undefined,
+        topicId,
+      );
+      return;
+    }
+
+    if (commandName === "/close") {
+      await updateTicketStatus(
+        ticket.id,
+        "closed",
+      );
+
+      await saveSupportMessage(
+        ticket.id,
+        "system",
+        `Оператор ${sender.id} закрыл обращение.`,
+        sender.id,
+        message,
+      );
+
+      await sendMessage(
+        ticket.requester_telegram_id,
+        [
+          `Обращение №${ticket.id} закрыто оператором.`,
+          "",
+          "При новой проблеме нажмите /start.",
+        ].join("\n"),
+      );
+
+      await sendMessage(
+        supportGroupChatId,
+        `✅ Обращение №${ticket.id} закрыто.`,
+        undefined,
+        topicId,
+      );
+
+      try {
+        await telegramRequest("closeForumTopic", {
+          chat_id: supportGroupChatId,
+          message_thread_id: topicId,
+        });
+      } catch (error) {
+        console.error(
+          "Не удалось закрыть тему:",
+          error,
+        );
+      }
+
+      return;
+    }
+
+    await sendMessage(
+      ticket.requester_telegram_id,
+      [
+        "👨‍💻 Ответ поддержки Zenvora",
+        "",
+        text,
+      ].join("\n"),
+    );
+
+    await saveSupportMessage(
+      ticket.id,
+      "operator",
+      text,
+      sender.id,
+      message,
+    );
+
+    await updateTicketStatus(
+      ticket.id,
+      "waiting_user",
+    );
 
     return;
   }
@@ -1088,6 +1397,23 @@ async function handleMessage(
     await findOpenTicket(sender.id);
 
   if (openTicket && text) {
+    const context =
+      await getAccountContext(sender.id);
+
+    if (!context) {
+      await showAccount(
+        message.chat.id,
+        sender.id,
+      );
+      return;
+    }
+
+    const topicId = await ensureOperatorTopic(
+      openTicket,
+      sender,
+      context,
+    );
+
     await saveSupportMessage(
       openTicket.id,
       "user",
@@ -1119,11 +1445,22 @@ async function handleMessage(
     }
 
     await sendMessage(
+      supportGroupChatId,
+      [
+        "👤 Сообщение пользователя",
+        "",
+        text,
+      ].join("\n"),
+      undefined,
+      topicId,
+    );
+
+    await sendMessage(
       message.chat.id,
       [
-        `Сообщение добавлено в обращение №${openTicket.id}.`,
+        `Сообщение отправлено оператору в обращение №${openTicket.id}.`,
         "",
-        "Оператор получит его после подключения закрытой группы поддержки.",
+        "Ответ придёт в этот чат.",
       ].join("\n"),
     );
 
