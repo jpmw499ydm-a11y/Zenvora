@@ -22,6 +22,54 @@ type SetupStatus =
   | "checking"
   | "connected";
 
+type DevicePlatform =
+  | "ios"
+  | "android"
+  | "windows"
+  | "macos"
+  | "other";
+
+type VpnDevice = {
+  id: string;
+  name: string;
+  platform: DevicePlatform;
+  status: "active" | "revoked";
+  configUrl: string | null;
+  createdAt: string;
+};
+
+type DeviceListPayload = {
+  devices: VpnDevice[];
+  used: number;
+  limit: number;
+};
+
+type DevicesApiResponse =
+  | {
+      ok: true;
+      devices: DeviceListPayload;
+    }
+  | {
+      ok: true;
+      device: VpnDevice & {
+        used: number;
+        limit: number;
+      };
+    }
+  | {
+      ok: true;
+      result: {
+        removed: boolean;
+        id: string;
+        used: number;
+        limit: number;
+      };
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
 type Plan = {
   id: PlanId;
   months: number;
@@ -225,6 +273,77 @@ const starsByDepositAmount: Record<DepositAmount, number> = {
   2000: 1000,
 };
 
+const devicePlatforms: Array<{
+  id: DevicePlatform;
+  icon: string;
+  title: string;
+}> = [
+  { id: "ios", icon: "", title: "iPhone / iPad" },
+  { id: "android", icon: "▶", title: "Android" },
+  { id: "windows", icon: "▣", title: "Windows" },
+  { id: "macos", icon: "⌘", title: "macOS" },
+];
+
+function detectDevicePlatform(): DevicePlatform {
+  if (typeof navigator === "undefined") {
+    return "other";
+  }
+
+  const userAgent = navigator.userAgent.toLowerCase();
+  const isTouchMac =
+    userAgent.includes("macintosh") &&
+    navigator.maxTouchPoints > 1;
+
+  if (
+    userAgent.includes("iphone") ||
+    userAgent.includes("ipad") ||
+    userAgent.includes("ipod") ||
+    isTouchMac
+  ) {
+    return "ios";
+  }
+
+  if (userAgent.includes("android")) {
+    return "android";
+  }
+
+  if (userAgent.includes("windows")) {
+    return "windows";
+  }
+
+  if (userAgent.includes("macintosh")) {
+    return "macos";
+  }
+
+  return "other";
+}
+
+function getDevicePlatformLabel(
+  platform: DevicePlatform,
+) {
+  return (
+    devicePlatforms.find((item) => item.id === platform)
+      ?.title ?? "Другое устройство"
+  );
+}
+
+function getDevicePlatformIcon(
+  platform: DevicePlatform,
+) {
+  return (
+    devicePlatforms.find((item) => item.id === platform)
+      ?.icon ?? "◇"
+  );
+}
+
+function formatDeviceDate(value: string) {
+  const date = new Date(value);
+
+  return Number.isNaN(date.getTime())
+    ? "Дата неизвестна"
+    : `Добавлено ${formatDate(date)}`;
+}
+
 function formatMoney(value: number) {
   return `${Math.abs(value).toLocaleString("ru-RU")} ₽`;
 }
@@ -352,6 +471,31 @@ export default function App() {
   const [transactions, setTransactions] = useState<
     Transaction[]
   >([]);
+
+  const [devices, setDevices] = useState<VpnDevice[]>([]);
+
+  const [deviceLimit, setDeviceLimit] = useState(5);
+
+  const [devicesLoading, setDevicesLoading] =
+    useState(false);
+
+  const [deviceActionLoading, setDeviceActionLoading] =
+    useState<string | null>(null);
+
+  const [devicesError, setDevicesError] =
+    useState<string | null>(null);
+
+  const [deviceNotice, setDeviceNotice] =
+    useState<string | null>(null);
+
+  const [selectedDevicePlatform, setSelectedDevicePlatform] =
+    useState<DevicePlatform>(() =>
+      detectDevicePlatform(),
+    );
+
+  const [deviceName, setDeviceName] = useState(
+    "Моё устройство",
+  );
 
   const selectedPlan = useMemo(() => {
     return (
@@ -512,6 +656,15 @@ export default function App() {
       behavior: "smooth",
     });
   }, [page]);
+
+  useEffect(() => {
+    if (!telegramInitData || !subscriptionActive) {
+      setDevices([]);
+      return;
+    }
+
+    void loadDevices(telegramInitData);
+  }, [telegramInitData, subscriptionActive]);
 
   useEffect(() => {
     if (
@@ -1075,14 +1228,209 @@ export default function App() {
   }
 
   function openInstruction() {
-    changePage("connect");
+    setDeviceNotice(
+      "Выберите платформу, назовите устройство и нажмите «Добавить устройство». После подключения VPN-сервера здесь появится персональная ссылка для импорта.",
+    );
   }
 
-  function installVpn() {
-    setSetupStatus("config-opened");
+  async function callDevicesApi(
+    initData: string,
+    payload: Record<string, unknown>,
+  ) {
+    const response = await fetch("/api/devices", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        initData,
+        ...payload,
+      }),
+    });
+
+    const contentType =
+      response.headers.get("content-type") ?? "";
+
+    if (!contentType.includes("application/json")) {
+      throw new Error(
+        `Сервер вернул ошибку ${response.status}`,
+      );
+    }
+
+    const result =
+      (await response.json()) as DevicesApiResponse;
+
+    if (!response.ok || result.ok === false) {
+      throw new Error(
+        result.ok === false
+          ? result.error
+          : "Не удалось выполнить операцию с устройством",
+      );
+    }
+
+    return result;
+  }
+
+  async function loadDevices(initData: string) {
+    try {
+      setDevicesLoading(true);
+      setDevicesError(null);
+
+      const result = await callDevicesApi(initData, {
+        action: "list",
+      });
+
+      if (!("devices" in result)) {
+        throw new Error(
+          "Сервер вернул неправильный список устройств",
+        );
+      }
+
+      setDevices(result.devices.devices);
+      setDeviceLimit(result.devices.limit);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Не удалось загрузить устройства";
+
+      setDevicesError(message);
+    } finally {
+      setDevicesLoading(false);
+    }
+  }
+
+  async function createDevice() {
+    const initData = requireTelegram();
+
+    if (!initData || deviceActionLoading) {
+      return;
+    }
+
+    const normalizedName = deviceName.trim();
+
+    if (!normalizedName) {
+      setDevicesError("Введите название устройства.");
+      return;
+    }
+
+    if (devices.length >= deviceLimit) {
+      setDevicesError(
+        `Достигнут лимит: можно подключить не больше ${deviceLimit} устройств.`,
+      );
+      return;
+    }
+
+    try {
+      setDeviceActionLoading("create");
+      setDevicesError(null);
+      setDeviceNotice(null);
+
+      const result = await callDevicesApi(initData, {
+        action: "create",
+        deviceName: normalizedName,
+        platform: selectedDevicePlatform,
+      });
+
+      if (!("device" in result)) {
+        throw new Error(
+          "Сервер не вернул созданное устройство",
+        );
+      }
+
+      setDevices((currentDevices) => [
+        result.device,
+        ...currentDevices.filter(
+          (device) => device.id !== result.device.id,
+        ),
+      ]);
+
+      setDeviceLimit(result.device.limit);
+      setSetupStatus("config-opened");
+      setDeviceName("");
+      setDeviceNotice(
+        `Устройство «${result.device.name}» добавлено. Место в лимите занято. Реальную конфигурацию подключим после настройки VPN-сервера.`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Не удалось добавить устройство";
+
+      setDevicesError(message);
+    } finally {
+      setDeviceActionLoading(null);
+    }
+  }
+
+  async function revokeDevice(device: VpnDevice) {
+    const initData = requireTelegram();
+
+    if (!initData || deviceActionLoading) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Отвязать устройство «${device.name}»? Его место освободится.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      setDeviceActionLoading(device.id);
+      setDevicesError(null);
+      setDeviceNotice(null);
+
+      const result = await callDevicesApi(initData, {
+        action: "revoke",
+        deviceId: device.id,
+      });
+
+      if (!("result" in result)) {
+        throw new Error(
+          "Сервер не подтвердил удаление устройства",
+        );
+      }
+
+      setDevices((currentDevices) =>
+        currentDevices.filter(
+          (currentDevice) =>
+            currentDevice.id !== device.id,
+        ),
+      );
+
+      setDeviceLimit(result.result.limit);
+
+      if (result.result.used === 0) {
+        setSetupStatus("not-started");
+      }
+
+      setDeviceNotice(
+        `Устройство «${device.name}» отвязано. Теперь можно добавить другое.`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Не удалось отвязать устройство";
+
+      setDevicesError(message);
+    } finally {
+      setDeviceActionLoading(null);
+    }
   }
 
   function checkConnection() {
+    if (devices.length === 0) {
+      setDevicesError(
+        "Сначала добавьте хотя бы одно устройство.",
+      );
+      return;
+    }
+
+    setDevicesError(null);
     setSetupStatus("checking");
 
     window.setTimeout(() => {
@@ -1277,7 +1625,7 @@ export default function App() {
 
           <div>
             <strong>Мои устройства</strong>
-            <small>Использовано 0 из 5</small>
+            <small>Использовано {devices.length} из {deviceLimit}</small>
           </div>
 
           <b>›</b>
@@ -1311,6 +1659,8 @@ export default function App() {
   }
 
   function renderConnectPage() {
+    const limitReached = devices.length >= deviceLimit;
+
     return (
       <section className="setupPage">
         <div className="pageHeader">
@@ -1329,15 +1679,98 @@ export default function App() {
         </div>
 
         <div className="setupTitle">
-          <span>ДО 5 УСТРОЙСТВ</span>
+          <span>ДО {deviceLimit} УСТРОЙСТВ</span>
           <h1>Подключите устройство</h1>
-          <p>Выполните шаги ниже. После появления сервера сюда будет подставляться ваша персональная конфигурация.</p>
+          <p>
+            Каждое добавленное устройство занимает одно место.
+            Ненужное устройство можно отвязать в любой момент.
+          </p>
         </div>
+
+        <div className="sectionTitle">
+          <strong>Мои устройства</strong>
+          <small>
+            {devices.length} из {deviceLimit}
+          </small>
+        </div>
+
+        {devicesLoading && (
+          <section className="walletPendingCard">
+            <div className="pendingSpinner" />
+            <div>
+              <strong>Загружаем устройства</strong>
+              <p>Получаем актуальный список из Supabase.</p>
+            </div>
+          </section>
+        )}
+
+        {devicesError && (
+          <section className="walletPendingCard">
+            <span className="instructionIcon">!</span>
+            <div>
+              <strong>Не удалось выполнить действие</strong>
+              <p>{devicesError}</p>
+            </div>
+          </section>
+        )}
+
+        {deviceNotice && (
+          <section className="notificationCard">
+            <span>✓</span>
+            <p>{deviceNotice}</p>
+          </section>
+        )}
+
+        {!devicesLoading && devices.length === 0 && (
+          <div className="emptyState">
+            Подключённых устройств пока нет
+          </div>
+        )}
+
+        {devices.map((device) => (
+          <article className="menuCard" key={device.id}>
+            <span className="menuIcon">
+              {getDevicePlatformIcon(device.platform)}
+            </span>
+
+            <div>
+              <strong>{device.name}</strong>
+              <small>
+                {getDevicePlatformLabel(device.platform)} · {formatDeviceDate(device.createdAt)}
+              </small>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void revokeDevice(device)}
+              disabled={deviceActionLoading !== null}
+              aria-busy={deviceActionLoading === device.id}
+              style={{
+                minWidth: "62px",
+                padding: "9px 10px",
+                border: "1px solid rgba(255, 107, 123, 0.22)",
+                borderRadius: "12px",
+                color: "#ff8e9b",
+                background: "rgba(255, 78, 98, 0.07)",
+                fontSize: "8px",
+                fontWeight: 700,
+              }}
+            >
+              {deviceActionLoading === device.id
+                ? "Удаляем..."
+                : "Отвязать"}
+            </button>
+          </article>
+        ))}
 
         <div className="progressLine">
           <span className="active" />
-          <span className={setupStatus !== "not-started" ? "active" : ""} />
-          <span className={setupStatus === "checking" || setupStatus === "connected" ? "active" : ""} />
+          <span className="active" />
+          <span
+            className={
+              devices.length > 0 ? "active" : ""
+            }
+          />
         </div>
 
         <div className="setupList">
@@ -1346,15 +1779,32 @@ export default function App() {
             <div className="stepContent">
               <small>ПЕРВЫЙ ШАГ</small>
               <h3>Установите приложение</h3>
-              <p>Выберите приложение для вашего устройства.</p>
+              <p>
+                Скачайте клиент для устройства, которое хотите
+                подключить.
+              </p>
+
               <div className="appButtons">
-                <button type="button" onClick={openIphoneApp}>
+                <button
+                  type="button"
+                  onClick={openIphoneApp}
+                >
                   <span className="appIcon"></span>
-                  <div><small>Скачать для</small><strong>iPhone</strong></div>
+                  <div>
+                    <small>Скачать для</small>
+                    <strong>iPhone / iPad</strong>
+                  </div>
                 </button>
-                <button type="button" onClick={openAndroidApp}>
+
+                <button
+                  type="button"
+                  onClick={openAndroidApp}
+                >
                   <span className="appIcon">▶</span>
-                  <div><small>Скачать для</small><strong>Android</strong></div>
+                  <div>
+                    <small>Скачать для</small>
+                    <strong>Android</strong>
+                  </div>
                 </button>
               </div>
             </div>
@@ -1364,52 +1814,154 @@ export default function App() {
             <div className="stepNumber">2</div>
             <div className="stepContent">
               <small>ВТОРОЙ ШАГ</small>
-              <h3>Откройте инструкцию</h3>
-              <p>Здесь будет пошаговое руководство по импорту персональной конфигурации.</p>
-              <button className="instructionCard" type="button" onClick={openInstruction}>
+              <h3>Выберите устройство</h3>
+              <p>
+                Укажите платформу и понятное название, например
+                «Мой iPhone» или «Ноутбук».
+              </p>
+
+              <div className="appButtons">
+                {devicePlatforms.map((platform) => {
+                  const selected =
+                    selectedDevicePlatform === platform.id;
+
+                  return (
+                    <button
+                      type="button"
+                      key={platform.id}
+                      onClick={() =>
+                        setSelectedDevicePlatform(platform.id)
+                      }
+                      style={{
+                        borderColor: selected
+                          ? "rgba(112, 151, 255, 0.72)"
+                          : undefined,
+                        background: selected
+                          ? "rgba(75, 112, 224, 0.18)"
+                          : undefined,
+                      }}
+                    >
+                      <span className="appIcon">
+                        {platform.icon}
+                      </span>
+                      <div>
+                        <small>
+                          {selected ? "Выбрано" : "Платформа"}
+                        </small>
+                        <strong>{platform.title}</strong>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <input
+                type="text"
+                value={deviceName}
+                maxLength={60}
+                placeholder="Название устройства"
+                onChange={(event) =>
+                  setDeviceName(event.target.value)
+                }
+                style={{
+                  width: "100%",
+                  marginTop: "11px",
+                  padding: "13px 14px",
+                  border: "1px solid rgba(99, 139, 255, 0.18)",
+                  borderRadius: "15px",
+                  outline: "none",
+                  color: "#f7f8ff",
+                  background: "rgba(66, 103, 216, 0.075)",
+                  fontSize: "10px",
+                }}
+              />
+
+              <button
+                className="instructionCard"
+                type="button"
+                onClick={openInstruction}
+                style={{ marginTop: "10px" }}
+              >
                 <span className="instructionIcon">?</span>
-                <div><strong>Инструкция по установке</strong><small>Вы уже на странице подключения</small></div>
-                <b>✓</b>
+                <div>
+                  <strong>Как это работает</strong>
+                  <small>Показать короткое пояснение</small>
+                </div>
+                <b>›</b>
               </button>
             </div>
           </article>
 
-          <article className={`setupCard ${setupStatus !== "not-started" ? "setupCardCompleted" : ""}`}>
-            <div className="stepNumber">{setupStatus !== "not-started" ? "✓" : "3"}</div>
+          <article
+            className={`setupCard ${
+              devices.length > 0
+                ? "setupCardCompleted"
+                : ""
+            }`}
+          >
+            <div className="stepNumber">
+              {devices.length > 0 ? "✓" : "3"}
+            </div>
+
             <div className="stepContent">
               <small>ПОСЛЕДНИЙ ШАГ</small>
               <h3>Добавьте конфигурацию</h3>
-              <p>Пока сервер не подключён, кнопка работает в тестовом режиме и никуда не переводит.</p>
+              <p>
+                Сейчас создаётся запись устройства и занимается
+                место в лимите. Реальную VPN-ссылку добавим после
+                подключения сервера.
+              </p>
 
-              {setupStatus === "not-started" && (
-                <button className="primaryButton" type="button" onClick={installVpn}>
-                  Получить конфигурацию <span>›</span>
-                </button>
-              )}
+              <button
+                className="primaryButton"
+                type="button"
+                onClick={() => void createDevice()}
+                disabled={
+                  deviceActionLoading !== null || limitReached
+                }
+                aria-busy={deviceActionLoading === "create"}
+              >
+                {limitReached
+                  ? "Лимит устройств достигнут"
+                  : deviceActionLoading === "create"
+                    ? "Добавляем..."
+                    : "Добавить устройство"}
+                <span>›</span>
+              </button>
 
-              {setupStatus === "config-opened" && (
-                <div className="configOpenedBlock">
-                  <div className="configNotice">
-                    <span>✓</span>
-                    <div><strong>Тестовая конфигурация подготовлена</strong><p>После настройки сервера здесь откроется реальная ссылка.</p></div>
-                  </div>
-                  <button className="primaryButton" type="button" onClick={checkConnection}>
-                    Проверить подключение <span>›</span>
+              {devices.length > 0 &&
+                setupStatus !== "checking" &&
+                setupStatus !== "connected" && (
+                  <button
+                    className="secondaryButton"
+                    type="button"
+                    onClick={checkConnection}
+                    style={{ marginTop: "10px" }}
+                  >
+                    Проверить подключение
                   </button>
-                </div>
-              )}
+                )}
 
               {setupStatus === "checking" && (
                 <div className="checkingBlock">
                   <div className="checkingSpinner" />
-                  <div><strong>Проверяем подключение</strong><p>Это займёт несколько секунд</p></div>
+                  <div>
+                    <strong>Проверяем подключение</strong>
+                    <p>Это займёт несколько секунд</p>
+                  </div>
                 </div>
               )}
 
               {setupStatus === "connected" && (
                 <div className="configNotice">
                   <span>✓</span>
-                  <div><strong>Устройство подключено</strong><p>Тестовая проверка завершена успешно.</p></div>
+                  <div>
+                    <strong>Проверка завершена</strong>
+                    <p>
+                      Интерфейс работает. Настоящую проверку
+                      включим после настройки VPN-сервера.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -1417,8 +1969,16 @@ export default function App() {
         </div>
 
         <section className="subscriptionSummary">
-          <div><span>Устройства</span><strong>0 из 5</strong></div>
-          <div><span>Осталось</span><strong>{daysLeft} дней</strong></div>
+          <div>
+            <span>Устройства</span>
+            <strong>
+              {devices.length} из {deviceLimit}
+            </strong>
+          </div>
+          <div>
+            <span>Осталось</span>
+            <strong>{daysLeft} дней</strong>
+          </div>
         </section>
       </section>
     );
