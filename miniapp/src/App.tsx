@@ -1216,10 +1216,16 @@ export default function App() {
   }
 
   function openSupportBot() {
-    openExternalLink(
-      "https://t.me/Zenvorasupport_bot?start=miniapp",
-    );
+  const telegramApp = window.Telegram?.WebApp;
+  const url = "https://t.me/Zenvorasupport_bot?start=miniapp";
+
+  if (telegramApp?.openTelegramLink) {
+    telegramApp.openTelegramLink(url);
+    return;
   }
+
+  window.location.href = url;
+}
 
   function openIphoneApp() {
     openExternalLink(
