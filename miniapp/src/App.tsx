@@ -1216,8 +1216,13 @@ export default function App() {
   }
 
   function openSupportBot() {
-  const telegramApp = window.Telegram?.WebApp;
   const url = "https://t.me/Zenvorasupport_bot?start=miniapp";
+
+  const telegramApp = window.Telegram?.WebApp as
+    | {
+        openTelegramLink?: (url: string) => void;
+      }
+    | undefined;
 
   if (telegramApp?.openTelegramLink) {
     telegramApp.openTelegramLink(url);
